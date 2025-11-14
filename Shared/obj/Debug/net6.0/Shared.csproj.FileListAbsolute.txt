@@ -1,0 +1,12 @@
+C:\Users\TP\source\repos\YourChatApp\Shared\bin\Debug\net6.0\YourChatApp.Shared.deps.json
+C:\Users\TP\source\repos\YourChatApp\Shared\bin\Debug\net6.0\YourChatApp.Shared.dll
+C:\Users\TP\source\repos\YourChatApp\Shared\bin\Debug\net6.0\YourChatApp.Shared.pdb
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\Shared.csproj.AssemblyReference.cache
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\Shared.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\Shared.AssemblyInfoInputs.cache
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\Shared.AssemblyInfo.cs
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\Shared.csproj.CoreCompileInputs.cache
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\YourChatApp.Shared.dll
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\refint\YourChatApp.Shared.dll
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\YourChatApp.Shared.pdb
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\ref\YourChatApp.Shared.dll
