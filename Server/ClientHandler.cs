@@ -37,6 +37,9 @@ namespace YourChatApp.Server
             
             try
             {
+                // Enable TCP keep-alive
+                _client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                
                 _stream = client.GetStream();
                 _stream.ReadTimeout = 60000; // 60 seconds timeout
                 _stream.WriteTimeout = 60000;
@@ -78,7 +81,11 @@ namespace YourChatApp.Server
                             break;
                         }
 
-                        Console.WriteLine($"[RECV] Client #{_clientId}: {packet.Command}");
+                        // Don't log PING/PONG to reduce spam
+                        if (packet.Command != CommandType.PING && packet.Command != CommandType.PONG)
+                        {
+                            Console.WriteLine($"[RECV] Client #{_clientId}: {packet.Command}");
+                        }
 
                         // Xử lý lệnh
                         await ProcessCommand(packet);
@@ -882,7 +889,12 @@ namespace YourChatApp.Server
                 {
                     _stream.Write(data, 0, data.Length);
                     _stream.Flush();
-                    Console.WriteLine($"[SEND] Client #{_clientId}: {packet.Command}");
+                    
+                    // Don't log PING/PONG to reduce spam
+                    if (packet.Command != CommandType.PING && packet.Command != CommandType.PONG)
+                    {
+                        Console.WriteLine($"[SEND] Client #{_clientId}: {packet.Command}");
+                    }
                 }
             }
             catch (Exception ex)

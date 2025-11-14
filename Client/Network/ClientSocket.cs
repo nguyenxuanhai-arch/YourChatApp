@@ -18,6 +18,9 @@ namespace YourChatApp.Client.Network
         private bool _isConnected = false;
         private User _currentUser;
         private Thread _receiveThread;
+        private System.Timers.Timer _pingTimer;
+        private DateTime _lastActivity = DateTime.Now;
+        private readonly object _activityLock = new object();
 
         // Delegate cho các sự kiện
         public delegate void PacketReceivedHandler(CommandPacket packet);
@@ -34,7 +37,7 @@ namespace YourChatApp.Client.Network
         // Đổi IP này thành IP của máy Server (dùng ipconfig để xem)
         // Ví dụ: "192.168.1.100" nếu Server ở máy khác trong LAN
         // Hoặc giữ "127.0.0.1" nếu Server và Client cùng máy
-        private const string SERVER_HOST = "127.0.0.1";
+        private const string SERVER_HOST = "192.168.1.129";
 
         public ClientSocket()
         {
@@ -51,11 +54,19 @@ namespace YourChatApp.Client.Network
                 Console.WriteLine($"[*] Connecting to {host}:{port}...");
                 
                 await _client.ConnectAsync(host, port);
+                
+                // Enable TCP keep-alive
+                _client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                
                 _stream = _client.GetStream();
                 _stream.ReadTimeout = 60000;
                 _stream.WriteTimeout = 60000;
 
                 _isConnected = true;
+                lock (_activityLock)
+                {
+                    _lastActivity = DateTime.Now;
+                }
                 OnConnectionStatusChanged?.Invoke(true);
 
                 Console.WriteLine("[+] Connected to server");
@@ -66,6 +77,9 @@ namespace YourChatApp.Client.Network
                     IsBackground = true
                 };
                 _receiveThread.Start();
+
+                // Bắt đầu heartbeat timer
+                StartHeartbeat();
 
                 return true;
             }
@@ -87,6 +101,7 @@ namespace YourChatApp.Client.Network
             try
             {
                 _isConnected = false;
+                StopHeartbeat();
                 _stream?.Close();
                 _client?.Close();
                 OnConnectionStatusChanged?.Invoke(false);
@@ -116,7 +131,17 @@ namespace YourChatApp.Client.Network
                 {
                     _stream.Write(data, 0, data.Length);
                     _stream.Flush();
-                    Console.WriteLine($"[SEND] {packet.Command}");
+                    
+                    // Update last activity timestamp
+                    lock (_activityLock)
+                    {
+                        _lastActivity = DateTime.Now;
+                    }
+                    
+                    if (packet.Command != CommandType.PING)
+                    {
+                        Console.WriteLine($"[SEND] {packet.Command}");
+                    }
                     return true;
                 }
 
@@ -147,6 +172,25 @@ namespace YourChatApp.Client.Network
                         if (packet == null)
                         {
                             break;
+                        }
+
+                        // Update last activity timestamp
+                        lock (_activityLock)
+                        {
+                            _lastActivity = DateTime.Now;
+                        }
+
+                        // Handle PING/PONG internally
+                        if (packet.Command == CommandType.PING)
+                        {
+                            // Respond to server PING with PONG
+                            SendPacket(new CommandPacket { Command = CommandType.PONG });
+                            continue;
+                        }
+                        else if (packet.Command == CommandType.PONG)
+                        {
+                            // Received PONG response from server
+                            continue;
                         }
 
                         Console.WriteLine($"[RECV] {packet.Command}");
@@ -184,5 +228,46 @@ namespace YourChatApp.Client.Network
         /// Đặt user hiện tại
         /// </summary>
         public void SetCurrentUser(User user) => _currentUser = user;
+
+        /// <summary>
+        /// Bắt đầu heartbeat timer để gửi PING định kỳ
+        /// </summary>
+        private void StartHeartbeat()
+        {
+            StopHeartbeat();
+
+            _pingTimer = new System.Timers.Timer(15000); // 15 seconds
+            _pingTimer.Elapsed += (sender, e) =>
+            {
+                try
+                {
+                    if (_isConnected)
+                    {
+                        // Send PING to keep connection alive
+                        SendPacket(new CommandPacket { Command = CommandType.PING });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] Heartbeat failed: {ex.Message}");
+                }
+            };
+            _pingTimer.AutoReset = true;
+            _pingTimer.Start();
+            Console.WriteLine("[*] Heartbeat started (15s interval)");
+        }
+
+        /// <summary>
+        /// Dừng heartbeat timer
+        /// </summary>
+        private void StopHeartbeat()
+        {
+            if (_pingTimer != null)
+            {
+                _pingTimer.Stop();
+                _pingTimer.Dispose();
+                _pingTimer = null;
+            }
+        }
     }
 }
