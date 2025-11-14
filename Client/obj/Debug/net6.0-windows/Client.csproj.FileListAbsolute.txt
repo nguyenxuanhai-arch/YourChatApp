@@ -21,3 +21,4 @@ C:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net6.0-windows\refint\Your
 C:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net6.0-windows\YourChatApp.Client.pdb
 C:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net6.0-windows\Client.genruntimeconfig.cache
 C:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net6.0-windows\ref\YourChatApp.Client.dll
+C:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net6.0-windows\Client.sourcelink.json

@@ -5,8 +5,11 @@
 YourChatApp là một ứng dụng chat mạng được xây dựng cho môn **Lập trình Mạng** sử dụng kiến trúc Client-Server với **Socket TCP/IP**. Ứng dụng hỗ trợ:
 
 - ✅ Đăng nhập và đăng ký
-- ✅ Chat 1-1 giữa các user
-- ✅ Quản lý bạn bè
+- ✅ Chat 1-1 giữa các user (lưu lịch sử)
+- ✅ Quản lý bạn bè với yêu cầu kết bạn
+- ✅ Xem yêu cầu kết bạn ở sidebar bên phải
+- ✅ Accept/Reject friend requests
+- ✅ Danh sách bạn bè với trạng thái online/offline
 - ✅ Cuộc gọi video P2P (relay qua server)
 - ✅ Ghi âm/phát âm thanh
 - ✅ Lưu trữ tin nhắn trên MySQL
@@ -107,7 +110,10 @@ YourChatApp/
 ### Core
 - **C#** (.NET 6.0)
 - **Socket TCP/IP** (System.Net.Sockets)
-- **WinForms** (UI)
+- **WinForms** (UI) - Integrated Chat Form với 3 panels:
+  - **Left Panel**: Friends List (danh sách bạn bè)
+  - **Center Panel**: Chat Messages (lịch sử tin nhắn)
+  - **Right Panel**: Friend Requests (yêu cầu kết bạn)
 
 ### Database
 - **MySQL** (lưu trữ dữ liệu)
@@ -210,8 +216,11 @@ Tất cả dữ liệu được truyền dưới dạng JSON với cấu trúc:
 #### Friends
 - `ADD_FRIEND` - Thêm bạn bè
 - `GET_FRIENDS` - Lấy danh sách bạn bè
+- `GET_PENDING_REQUESTS` - Lấy danh sách yêu cầu kết bạn chưa xử lý
+- `FRIEND_REQUEST` - Thông báo yêu cầu kết bạn mới
 - `ACCEPT_FRIEND` - Chấp nhận yêu cầu kết bạn
 - `REJECT_FRIEND` - Từ chối yêu cầu kết bạn
+- `FRIEND_STATUS_UPDATE` - Cập nhật trạng thái bạn bè (online/offline)
 
 #### Video Call
 - `VIDEO_CALL_REQUEST` - Yêu cầu cuộc gọi
@@ -284,14 +293,20 @@ CREATE TABLE Messages (
 ```sql
 CREATE TABLE Friendships (
     FriendshipId INT PRIMARY KEY AUTO_INCREMENT,
-    UserId INT NOT NULL,
-    FriendUserId INT NOT NULL,
+    UserId INT NOT NULL,           -- Person who sent the request
+    FriendUserId INT NOT NULL,     -- Person who received the request
     Status INT DEFAULT 0,          -- 0: Pending, 1: Accepted, 2: Blocked
     CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (UserId) REFERENCES Users(UserId),
     FOREIGN KEY (FriendUserId) REFERENCES Users(UserId),
     UNIQUE KEY unique_friendship (UserId, FriendUserId)
 );
+```
+
+**Ví dụ:**
+- User1 gửi request tới User2 → Row: (UserId=1, FriendUserId=2, Status=0)
+- Khi User2 login → query `WHERE FriendUserId=2 AND Status=0` → trả về UserId=1
+- User2 accept → cập nhật Status=1
 ```
 
 ## 🎯 Các Khái Niệm Lập Trình Mạng
@@ -347,12 +362,23 @@ CREATE TABLE Friendships (
 4. Nếu thành công, MainChatForm sẽ mở
 
 ### Gửi Tin Nhắn
-1. Chọn bạn bè từ danh sách
-2. Nhập tin nhắn trong ô input
-3. Nhấn Enter hoặc click Send
-4. Tin nhắn sẽ được gửi qua server tới bạn bè
+1. Chọn bạn bè từ danh sách bên trái
+2. Lịch sử chat sẽ load ở giữa màn hình
+3. Nhập tin nhắn trong ô input
+4. Nhấn Enter hoặc click Send
+5. Tin nhắn sẽ được gửi qua server tới bạn bè (nếu online) và lưu vào database
 
-### Cuộc Gọi Video
+### Quản Lý Bạn Bè
+1. Click "Friends" menu → "Add Friend"
+2. Nhập username của người muốn kết bạn
+3. Yêu cầu kết bạn sẽ được gửi đến server
+4. Khi có yêu cầu kết bạn từ người khác, sẽ hiển thị ở panel bên phải
+5. Double-click vào yêu cầu → chọn Accept hoặc Reject
+
+### Xem Danh Sách Bạn Bè
+1. Click "Friends" menu → "View Friend List"
+2. Danh sách bạn bè hiển thị ở giữa với trạng thái online (🟢) hoặc offline (⚪)
+3. Double-click vào bạn bè để mở chat với họ
 1. Chọn bạn bè
 2. Click "Video Call"
 3. VideoCallForm sẽ mở
@@ -382,13 +408,34 @@ Client A                Server              Client B
   │                       │                    │
   ├─ CHAT_MESSAGE ───────►│                    │
   │                       │                    │
-  │             Validate & Save to DB         │
+  │        Validate, Save to DB, Route user   │
   │                       │                    │
   │                       ├─ CHAT_MESSAGE ───►│
   │                       │                    │
   │                    ◄──── MESSAGE_RECEIVED─┤
   │                       │                    │
   │◄────── Ack ───────────┤                    │
+```
+
+### Friend Request Flow
+```
+Requester              Server              Recipient
+  │                      │                    │
+  ├─ ADD_FRIEND ────────►│                    │
+  │                      │                    │
+  │        Validate, Save to DB (Status=0)   │
+  │                      │                    │
+  │◄────── Ack ──────────┤                    │
+  │                      │                    │
+  │          (On recipient login)             │
+  │                      │                    │
+  │                      ├─ FRIEND_REQUEST ──►│
+  │                      │                    │
+  │    (Double-click to accept/reject)        │
+  │                      │                    │
+  │                   ◄─ ACCEPT_FRIEND ──────┤
+  │◄─ FRIEND_STATUS_UPDATE ┤                  │
+  │     (Status updated)   │                  │
 ```
 
 ### Video Call Flow
@@ -415,14 +462,16 @@ Qua project này, bạn sẽ học được:
 
 1. ✅ Socket Programming (TCP/IP)
 2. ✅ Client-Server Architecture
-3. ✅ Multi-threaded Server
-4. ✅ Network Protocol Design
-5. ✅ Data Serialization
-6. ✅ Database Integration (MySQL)
-7. ✅ GUI with WinForms
-8. ✅ Threading & Synchronization
+3. ✅ Multi-threaded Server (xử lý đa client đồng thời)
+4. ✅ Network Protocol Design (JSON-based)
+5. ✅ Data Serialization/Deserialization
+6. ✅ Database Integration (MySQL, CRUD operations)
+7. ✅ GUI with WinForms (Integrated Multi-panel Layout)
+8. ✅ Threading & Synchronization (Thread-safe collections)
 9. ✅ Error Handling & Logging
 10. ✅ Real-time Communication
+11. ✅ Friend Management System (với request pending)
+12. ✅ Message History & Persistence
 
 ## 📚 Tài liệu Tham Khảo
 
@@ -442,5 +491,6 @@ YourChatApp - Network Programming Project
 ---
 
 **Chúc bạn học tập vui vẻ! 🚀**
-#   Y o u r C h a t A p p  
+#   Y o u r C h a t A p p 
+ 
  

@@ -10,3 +10,4 @@ C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\YourChatApp.Shared.
 C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\refint\YourChatApp.Shared.dll
 C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\YourChatApp.Shared.pdb
 C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\ref\YourChatApp.Shared.dll
+C:\Users\TP\source\repos\YourChatApp\Shared\obj\Debug\net6.0\Shared.sourcelink.json
