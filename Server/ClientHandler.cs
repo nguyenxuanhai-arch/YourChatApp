@@ -24,6 +24,7 @@ namespace YourChatApp.Server
         private User _user;
         private bool _isConnected;
         private readonly Server _server;
+        private readonly object _sendLock = new object();
 
         public int ClientId => _clientId;
         public int? UserId => _user?.UserId;
@@ -37,12 +38,13 @@ namespace YourChatApp.Server
             
             try
             {
-                // Enable TCP keep-alive
+                // Enable TCP keep-alive and disable Nagle's algorithm for better performance
                 _client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                _client.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
                 
                 _stream = client.GetStream();
-                _stream.ReadTimeout = 60000; // 60 seconds timeout
-                _stream.WriteTimeout = 60000;
+                _stream.ReadTimeout = 120000; // 120 seconds timeout
+                _stream.WriteTimeout = 120000;
             }
             catch (Exception ex)
             {
@@ -879,28 +881,31 @@ namespace YourChatApp.Server
         /// </summary>
         public void SendPacket(CommandPacket packet)
         {
-            try
+            lock (_sendLock) // Prevent concurrent sends
             {
-                if (!_isConnected || _stream == null)
-                    return;
-
-                byte[] data = PacketProcessor.SerializePacket(packet);
-                if (data != null)
+                try
                 {
-                    _stream.Write(data, 0, data.Length);
-                    _stream.Flush();
-                    
-                    // Don't log PING/PONG to reduce spam
-                    if (packet.Command != CommandType.PING && packet.Command != CommandType.PONG)
+                    if (!_isConnected || _stream == null)
+                        return;
+
+                    byte[] data = PacketProcessor.SerializePacket(packet);
+                    if (data != null)
                     {
-                        Console.WriteLine($"[SEND] Client #{_clientId}: {packet.Command}");
+                        _stream.Write(data, 0, data.Length);
+                        _stream.Flush();
+                        
+                        // Don't log PING/PONG to reduce spam
+                        if (packet.Command != CommandType.PING && packet.Command != CommandType.PONG)
+                        {
+                            Console.WriteLine($"[SEND] Client #{_clientId}: {packet.Command}");
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR] Send packet failed: {ex.Message}");
-                Disconnect();
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] Send packet failed: {ex.Message}");
+                    Disconnect();
+                }
             }
         }
 

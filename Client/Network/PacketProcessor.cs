@@ -80,6 +80,16 @@ namespace YourChatApp.Client.Network
 
                 return packet;
             }
+            catch (IOException ioEx)
+            {
+                // Network connection issues - client disconnected
+                return null;
+            }
+            catch (System.Net.Sockets.SocketException sockEx)
+            {
+                // Socket-specific error
+                return null;
+            }
             catch (Exception ex)
             {
                 Console.WriteLine($"[ERROR] Deserialize packet failed: {ex.Message}");

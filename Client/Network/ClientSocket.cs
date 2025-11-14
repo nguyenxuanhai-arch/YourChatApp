@@ -21,6 +21,7 @@ namespace YourChatApp.Client.Network
         private System.Timers.Timer _pingTimer;
         private DateTime _lastActivity = DateTime.Now;
         private readonly object _activityLock = new object();
+        private readonly object _sendLock = new object();
 
         // Delegate cho các sự kiện
         public delegate void PacketReceivedHandler(CommandPacket packet);
@@ -55,12 +56,13 @@ namespace YourChatApp.Client.Network
                 
                 await _client.ConnectAsync(host, port);
                 
-                // Enable TCP keep-alive
+                // Enable TCP keep-alive and disable Nagle's algorithm for better performance
                 _client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                _client.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
                 
                 _stream = _client.GetStream();
-                _stream.ReadTimeout = 60000;
-                _stream.WriteTimeout = 60000;
+                _stream.ReadTimeout = 120000; // 120 seconds timeout
+                _stream.WriteTimeout = 120000;
 
                 _isConnected = true;
                 lock (_activityLock)
@@ -118,41 +120,44 @@ namespace YourChatApp.Client.Network
         /// </summary>
         public bool SendPacket(CommandPacket packet)
         {
-            try
+            lock (_sendLock) // Prevent concurrent sends
             {
-                if (!_isConnected || _stream == null)
+                try
                 {
-                    OnError?.Invoke("Not connected to server");
+                    if (!_isConnected || _stream == null)
+                    {
+                        OnError?.Invoke("Not connected to server");
+                        return false;
+                    }
+
+                    byte[] data = PacketProcessor.SerializePacket(packet);
+                    if (data != null)
+                    {
+                        _stream.Write(data, 0, data.Length);
+                        _stream.Flush();
+                        
+                        // Update last activity timestamp
+                        lock (_activityLock)
+                        {
+                            _lastActivity = DateTime.Now;
+                        }
+                        
+                        if (packet.Command != CommandType.PING)
+                        {
+                            Console.WriteLine($"[SEND] {packet.Command}");
+                        }
+                        return true;
+                    }
+
                     return false;
                 }
-
-                byte[] data = PacketProcessor.SerializePacket(packet);
-                if (data != null)
+                catch (Exception ex)
                 {
-                    _stream.Write(data, 0, data.Length);
-                    _stream.Flush();
-                    
-                    // Update last activity timestamp
-                    lock (_activityLock)
-                    {
-                        _lastActivity = DateTime.Now;
-                    }
-                    
-                    if (packet.Command != CommandType.PING)
-                    {
-                        Console.WriteLine($"[SEND] {packet.Command}");
-                    }
-                    return true;
+                    OnError?.Invoke($"Send failed: {ex.Message}");
+                    Console.WriteLine($"[ERROR] Send failed: {ex.Message}");
+                    Disconnect();
+                    return false;
                 }
-
-                return false;
-            }
-            catch (Exception ex)
-            {
-                OnError?.Invoke($"Send failed: {ex.Message}");
-                Console.WriteLine($"[ERROR] Send failed: {ex.Message}");
-                Disconnect();
-                return false;
             }
         }
 
