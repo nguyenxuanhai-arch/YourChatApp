@@ -222,13 +222,14 @@ namespace YourChatApp.Server.Database
                     command.CommandText = @"
                         CREATE TABLE IF NOT EXISTS VideoCallRequests (
                             CallId VARCHAR(36) PRIMARY KEY,
-                            InitiatorId INT NOT NULL,
+                            CallerId INT NOT NULL,
+                            CallerName VARCHAR(100) NOT NULL,
                             ReceiverId INT NOT NULL,
-                            Status INT DEFAULT 0,
+                            Status VARCHAR(20) DEFAULT 'pending',
                             InitiatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            StartedAt TIMESTAMP NULL,
-                            EndedAt TIMESTAMP NULL,
-                            FOREIGN KEY (InitiatorId) REFERENCES Users(UserId),
+                            AcceptedAt TIMESTAMP NULL,
+                            RejectedAt TIMESTAMP NULL,
+                            FOREIGN KEY (CallerId) REFERENCES Users(UserId),
                             FOREIGN KEY (ReceiverId) REFERENCES Users(UserId)
                         )";
                     command.ExecuteNonQuery();

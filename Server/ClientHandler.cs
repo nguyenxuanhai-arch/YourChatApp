@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +24,9 @@ namespace YourChatApp.Server
         private User _user;
         private bool _isConnected;
         private readonly Server _server;
+
+        public int ClientId => _clientId;
+        public int? UserId => _user?.UserId;
 
         public ClientHandler(TcpClient client, Server server, int clientId)
         {
@@ -583,14 +587,66 @@ namespace YourChatApp.Server
                     return PacketProcessor.CreateErrorResponse("Missing receiverId");
 
                 int receiverId = Convert.ToInt32(packet.Data["receiverId"]);
+                int callerId = _user.UserId;
+                string callerName = _user.DisplayName;
 
-                // TODO: Lưu yêu cầu cuộc gọi vào database
-                // TODO: Chuyển yêu cầu đến client nhận nếu online
+                // Generate unique callId
+                string callId = Guid.NewGuid().ToString();
 
-                return PacketProcessor.CreateResponse(CommandType.VIDEO_CALL_REQUEST, 200, "Call request sent");
+                Console.WriteLine($"[VIDEO] Call request from {callerName} (UserId: {callerId}) to UserId: {receiverId}, CallId: {callId}");
+
+                // Save to database
+                try
+                {
+                    using (var connection = DbConnection.Instance.OpenConnection())
+                    {
+                        if (connection != null)
+                        {
+                            string query = "INSERT INTO videocallrequests (CallId, CallerId, CallerName, ReceiverId, Status, InitiatedAt) VALUES (@callId, @callerId, @callerName, @receiverId, @status, @initiatedAt)";
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = query;
+                                command.Parameters.AddWithValue("@callId", callId);
+                                command.Parameters.AddWithValue("@callerId", callerId);
+                                command.Parameters.AddWithValue("@callerName", callerName);
+                                command.Parameters.AddWithValue("@receiverId", receiverId);
+                                command.Parameters.AddWithValue("@status", "pending");
+                                command.Parameters.AddWithValue("@initiatedAt", DateTime.Now);
+                                command.ExecuteNonQuery();
+                            }
+                        }
+                    }
+                    Console.WriteLine($"[DB] Video call request saved to database");
+                }
+                catch (Exception dbEx)
+                {
+                    Console.WriteLine($"[WARN] Failed to save video call to database: {dbEx.Message}");
+                    // Continue anyway - the call can still proceed
+                }
+
+                // Send call request to receiver if online
+                var callRequestData = new Dictionary<string, object>
+                {
+                    { "callId", callId },
+                    { "callerId", callerId },
+                    { "callerName", callerName }
+                };
+                CommandPacket requestPacket = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_REQUEST, callRequestData);
+                
+                _server.SendToUser(receiverId, requestPacket);
+                Console.WriteLine($"[VIDEO] Call request sent to UserId: {receiverId}");
+                
+                // Send response with callId to caller
+                var responseData = new Dictionary<string, object>
+                {
+                    { "callId", callId },
+                    { "status", "sent" }
+                };
+                return PacketProcessor.CreateResponse(CommandType.VIDEO_CALL_REQUEST, 200, "Call request sent", responseData);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[ERROR] Video call request failed: {ex.Message}");
                 return PacketProcessor.CreateErrorResponse($"Video call request failed: {ex.Message}");
             }
         }
@@ -599,18 +655,84 @@ namespace YourChatApp.Server
         {
             try
             {
+                if (_user == null)
+                    return PacketProcessor.CreateErrorResponse("Not authenticated");
+
                 if (!packet.Data.ContainsKey("callId"))
                     return PacketProcessor.CreateErrorResponse("Missing callId");
 
                 string callId = packet.Data["callId"].ToString();
 
-                // TODO: Cập nhật trạng thái cuộc gọi
-                // TODO: Thông báo cho người gọi
+                Console.WriteLine($"[VIDEO] Call accepted: {callId} by UserId {_user.UserId}");
+
+                // Update database
+                try
+                {
+                    using (var connection = DbConnection.Instance.OpenConnection())
+                    {
+                        if (connection != null)
+                        {
+                            string query = "UPDATE videocallrequests SET Status = @status, AcceptedAt = @acceptedAt WHERE CallId = @callId";
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = query;
+                                command.Parameters.AddWithValue("@status", "accepted");
+                                command.Parameters.AddWithValue("@acceptedAt", DateTime.Now);
+                                command.Parameters.AddWithValue("@callId", callId);
+                                command.ExecuteNonQuery();
+                            }
+                        }
+                    }
+                    Console.WriteLine($"[DB] Video call status updated to accepted");
+                }
+                catch (Exception dbEx)
+                {
+                    Console.WriteLine($"[WARN] Failed to update video call status: {dbEx.Message}");
+                }
+
+                // Get caller info from database
+                int callerId = 0;
+                try
+                {
+                    using (var connection = DbConnection.Instance.OpenConnection())
+                    {
+                        if (connection != null)
+                        {
+                            string query = "SELECT CallerId FROM videocallrequests WHERE CallId = @callId";
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = query;
+                                command.Parameters.AddWithValue("@callId", callId);
+                                var result = command.ExecuteScalar();
+                                if (result != null)
+                                    callerId = Convert.ToInt32(result);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[WARN] Failed to get caller info: {ex.Message}");
+                }
+
+                // Notify caller that call was accepted
+                if (callerId > 0)
+                {
+                    var acceptData = new Dictionary<string, object>
+                    {
+                        { "callId", callId },
+                        { "status", "accepted" }
+                    };
+                    CommandPacket acceptPacket = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_ACCEPT, acceptData);
+                    _server.SendToUser(callerId, acceptPacket);
+                    Console.WriteLine($"[VIDEO] Call accepted notification sent to UserId {callerId}");
+                }
 
                 return PacketProcessor.CreateResponse(CommandType.VIDEO_CALL_ACCEPT, 200, "Call accepted");
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[ERROR] Video call accept failed: {ex.Message}");
                 return PacketProcessor.CreateErrorResponse($"Video call accept failed: {ex.Message}");
             }
         }
@@ -619,18 +741,84 @@ namespace YourChatApp.Server
         {
             try
             {
+                if (_user == null)
+                    return PacketProcessor.CreateErrorResponse("Not authenticated");
+
                 if (!packet.Data.ContainsKey("callId"))
                     return PacketProcessor.CreateErrorResponse("Missing callId");
 
                 string callId = packet.Data["callId"].ToString();
 
-                // TODO: Cập nhật trạng thái cuộc gọi
-                // TODO: Thông báo cho người gọi
+                Console.WriteLine($"[VIDEO] Call rejected: {callId} by UserId {_user.UserId}");
+
+                // Update database
+                try
+                {
+                    using (var connection = DbConnection.Instance.OpenConnection())
+                    {
+                        if (connection != null)
+                        {
+                            string query = "UPDATE videocallrequests SET Status = @status, RejectedAt = @rejectedAt WHERE CallId = @callId";
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = query;
+                                command.Parameters.AddWithValue("@status", "rejected");
+                                command.Parameters.AddWithValue("@rejectedAt", DateTime.Now);
+                                command.Parameters.AddWithValue("@callId", callId);
+                                command.ExecuteNonQuery();
+                            }
+                        }
+                    }
+                    Console.WriteLine($"[DB] Video call status updated to rejected");
+                }
+                catch (Exception dbEx)
+                {
+                    Console.WriteLine($"[WARN] Failed to update video call status: {dbEx.Message}");
+                }
+
+                // Get caller info from database
+                int callerId = 0;
+                try
+                {
+                    using (var connection = DbConnection.Instance.OpenConnection())
+                    {
+                        if (connection != null)
+                        {
+                            string query = "SELECT CallerId FROM videocallrequests WHERE CallId = @callId";
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = query;
+                                command.Parameters.AddWithValue("@callId", callId);
+                                var result = command.ExecuteScalar();
+                                if (result != null)
+                                    callerId = Convert.ToInt32(result);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[WARN] Failed to get caller info: {ex.Message}");
+                }
+
+                // Notify caller that call was rejected
+                if (callerId > 0)
+                {
+                    var rejectData = new Dictionary<string, object>
+                    {
+                        { "callId", callId },
+                        { "status", "rejected" }
+                    };
+                    CommandPacket rejectPacket = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_REJECT, rejectData);
+                    _server.SendToUser(callerId, rejectPacket);
+                    Console.WriteLine($"[VIDEO] Call rejected notification sent to UserId {callerId}");
+                }
 
                 return PacketProcessor.CreateResponse(CommandType.VIDEO_CALL_REJECT, 200, "Call rejected");
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[ERROR] Video call reject failed: {ex.Message}");
                 return PacketProcessor.CreateErrorResponse($"Video call reject failed: {ex.Message}");
             }
         }
@@ -639,17 +827,36 @@ namespace YourChatApp.Server
         {
             try
             {
-                if (!packet.Data.ContainsKey("callId") || !packet.Data.ContainsKey("receiverId"))
-                    return PacketProcessor.CreateErrorResponse("Missing call data");
+                if (!packet.Data.ContainsKey("callId"))
+                    return null; // No response for performance
 
-                // TODO: Chuyển tiếp dữ liệu video/audio đến client nhận
+                string callId = packet.Data["callId"].ToString();
+                
+                // Find the other participant in this call
+                var otherClients = _server.GetAllClients()
+                    .Where(c => c != this && c.UserId.HasValue)
+                    .ToList();
 
-                // Không cần gửi response cho video/audio data để tăng hiệu suất
+                // Forward to all other connected clients in the call
+                foreach (var client in otherClients)
+                {
+                    try
+                    {
+                        client.SendPacket(packet);
+                    }
+                    catch (Exception fwdEx)
+                    {
+                        Console.WriteLine($"[WARN] Failed to forward video/audio to Client #{client.ClientId}: {fwdEx.Message}");
+                    }
+                }
+
+                // No response to sender for performance
                 return null;
             }
             catch (Exception ex)
             {
-                return PacketProcessor.CreateErrorResponse($"Video audio data failed: {ex.Message}");
+                Console.WriteLine($"[ERROR] Video audio forward failed: {ex.Message}");
+                return null; // No response for performance
             }
         }
 

@@ -35,6 +35,24 @@ namespace YourChatApp.Client.Forms
             BuildUI();
             _clientSocket.OnPacketReceived += HandleServerMessage;
             this.Load += MainChatForm_Load;
+            this.FormClosing += MainChatForm_FormClosing;
+        }
+
+        private void MainChatForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            try
+            {
+                // Disconnect from server when closing main chat form
+                if (_clientSocket != null && _clientSocket.IsConnected)
+                {
+                    _clientSocket.Disconnect();
+                    Console.WriteLine("[MainChatForm] Disconnected from server on form close");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MainChatForm] Error disconnecting: {ex.Message}");
+            }
         }
 
         private void MainChatForm_Load(object sender, EventArgs e)
@@ -70,6 +88,7 @@ namespace YourChatApp.Client.Forms
             MenuStrip menuStrip = new MenuStrip();
             
             ToolStripMenuItem fileMenu = new ToolStripMenuItem("&File");
+            fileMenu.DropDownItems.Add("&Logout", null, Logout_Click);
             fileMenu.DropDownItems.Add("E&xit", null, (s, e) => this.Close());
             menuStrip.Items.Add(fileMenu);
 
@@ -98,6 +117,7 @@ namespace YourChatApp.Client.Forms
             friendsListBox.Location = new System.Drawing.Point(10, 60);
             friendsListBox.Size = new System.Drawing.Size(200, 480);
             friendsListBox.DoubleClick += FriendsList_DoubleClick;
+            friendsListBox.SelectedIndexChanged += FriendsList_SelectedIndexChanged;
             this.Controls.Add(friendsListBox);
 
             // Chat Area (Ở giữa và bên phải)
@@ -105,8 +125,17 @@ namespace YourChatApp.Client.Forms
             chatLabel.Text = "Messages";
             chatLabel.Font = new System.Drawing.Font("Arial", 12, System.Drawing.FontStyle.Bold);
             chatLabel.Location = new System.Drawing.Point(220, 30);
-            chatLabel.Size = new System.Drawing.Size(600, 25);
+            chatLabel.Size = new System.Drawing.Size(500, 25);
             this.Controls.Add(chatLabel);
+
+            // Video Call Button (top right of chat)
+            Button videoCallButton = new Button();
+            videoCallButton.Name = "videoCallButton";
+            videoCallButton.Text = "📞 Video Call";
+            videoCallButton.Location = new System.Drawing.Point(730, 30);
+            videoCallButton.Size = new System.Drawing.Size(140, 25);
+            videoCallButton.Click += VideoCall_Click;
+            this.Controls.Add(videoCallButton);
 
             RichTextBox chatTextBox = new RichTextBox();
             chatTextBox.Name = "chatTextBox";
@@ -193,16 +222,31 @@ namespace YourChatApp.Client.Forms
 
         private void VideoCall_Click(object sender, EventArgs e)
         {
-            ListBox friendsListBox = (ListBox)this.Controls["friendsListBox"];
-            if (friendsListBox.SelectedIndex >= 0)
+            if (_currentChatFriendId <= 0 || string.IsNullOrEmpty(_currentChatFriendName))
             {
-                string selectedFriend = friendsListBox.SelectedItem.ToString();
-                VideoCallForm videoForm = new VideoCallForm(_clientSocket);
-                videoForm.Show();
+                MessageBox.Show("Please select a friend first");
+                return;
             }
-            else
+
+            try
             {
-                MessageBox.Show("Please select a friend");
+                // Send video call request to server
+                var callData = new Dictionary<string, object>
+                {
+                    { "receiverId", _currentChatFriendId }
+                };
+                CommandPacket packet = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_REQUEST, callData);
+                _clientSocket.SendPacket(packet);
+
+                RichTextBox chatTextBox = (RichTextBox)this.Controls["chatTextBox"];
+                chatTextBox.AppendText($"📞 You initiated a video call with {_currentChatFriendName}\n");
+
+                // Note: VideoCallForm will open when receiving VIDEO_CALL_ACCEPT response
+                // Don't open it immediately - wait for confirmation
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error initiating video call: {ex.Message}");
             }
         }
 
@@ -235,6 +279,22 @@ namespace YourChatApp.Client.Forms
             }
         }
 
+        private void FriendsList_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            ListBox friendsListBox = (ListBox)this.Controls["friendsListBox"];
+            if (friendsListBox.SelectedIndex >= 0)
+            {
+                int selectedIndex = friendsListBox.SelectedIndex;
+                if (selectedIndex < _friends.Count)
+                {
+                    var friend = _friends[selectedIndex];
+                    _currentChatFriendId = friend.UserId;
+                    _currentChatFriendName = friend.DisplayName;
+                    Console.WriteLine($"[CLIENT] Friend selected: {_currentChatFriendName} (ID: {_currentChatFriendId})");
+                }
+            }
+        }
+
         private void SendButton_Click(object sender, EventArgs e)
         {
             TextBox messageInputTextBox = (TextBox)this.Controls["messageInputTextBox"];
@@ -261,8 +321,12 @@ namespace YourChatApp.Client.Forms
 
             if (sent)
             {
-                // Display sent message
+                // Display sent message (right-aligned - "You")
+                chatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Right;
+                chatTextBox.SelectionColor = System.Drawing.Color.Blue;
                 chatTextBox.AppendText($"You: {message}\n");
+                chatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Left;
+                chatTextBox.SelectionColor = System.Drawing.Color.Black;
                 messageInputTextBox.Text = "";
                 chatTextBox.ScrollToCaret();
             }
@@ -444,9 +508,22 @@ namespace YourChatApp.Client.Forms
                                     
                                     if (!string.IsNullOrEmpty(content))
                                     {
-                                        // Show "You:" for messages sent by current user, friend's name for received
-                                        string senderDisplay = (senderId == _currentUserId) ? "You" : _currentChatFriendName;
-                                        chatTextBox.AppendText($"{senderDisplay}: {content}\n");
+                                        if (senderId == _currentUserId)
+                                        {
+                                            // Your message - right aligned, blue color
+                                            chatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Right;
+                                            chatTextBox.SelectionColor = System.Drawing.Color.Blue;
+                                            chatTextBox.AppendText($"You: {content}\n");
+                                        }
+                                        else
+                                        {
+                                            // Friend's message - left aligned, black color
+                                            chatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Left;
+                                            chatTextBox.SelectionColor = System.Drawing.Color.Black;
+                                            chatTextBox.AppendText($"{_currentChatFriendName}: {content}\n");
+                                        }
+                                        chatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Left;
+                                        chatTextBox.SelectionColor = System.Drawing.Color.Black;
                                     }
                                 }
                                 
@@ -469,7 +546,13 @@ namespace YourChatApp.Client.Forms
                                 ? packet.Data["fromUsername"].ToString() 
                                 : _currentChatFriendName;
                             string content = packet.Data["content"].ToString();
+                            
+                            // Friend's message - left aligned, black color
+                            chatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Left;
+                            chatTextBox.SelectionColor = System.Drawing.Color.Black;
                             chatTextBox.AppendText($"{fromUsername}: {content}\n");
+                            chatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Left;
+                            chatTextBox.SelectionColor = System.Drawing.Color.Black;
                             chatTextBox.ScrollToCaret();
                         }
                         break;
@@ -478,17 +561,113 @@ namespace YourChatApp.Client.Forms
                     case CommandType.VIDEO_CALL_REQUEST:
                         if (packet.Data.ContainsKey("callerId"))
                         {
-                            DialogResult result = MessageBox.Show(
-                                "Incoming video call. Accept?",
-                                "Video Call",
-                                MessageBoxButtons.YesNo);
-                            
-                            if (result == DialogResult.Yes)
+                            try
                             {
-                                VideoCallForm videoForm = new VideoCallForm(_clientSocket);
+                                string callId = packet.Data.ContainsKey("callId") 
+                                    ? packet.Data["callId"].ToString() 
+                                    : Guid.NewGuid().ToString();
+                                string callerName = packet.Data.ContainsKey("callerName") 
+                                    ? packet.Data["callerName"].ToString() 
+                                    : "Unknown";
+                                int callerId = Convert.ToInt32(packet.Data["callerId"]);
+                                
+                                chatTextBox.AppendText($"📞 Incoming video call from {callerName}\n");
+                                
+                                DialogResult result = MessageBox.Show(
+                                    $"Incoming video call from {callerName}. Accept?",
+                                    "Video Call",
+                                    MessageBoxButtons.YesNo);
+                                
+                                if (result == DialogResult.Yes)
+                                {
+                                    // Send accept to server
+                                    var acceptData = new Dictionary<string, object>
+                                    {
+                                        { "callId", callId }
+                                    };
+                                    CommandPacket acceptPacket = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_ACCEPT, acceptData);
+                                    _clientSocket.SendPacket(acceptPacket);
+
+                                    chatTextBox.AppendText($"📞 You accepted the video call\n");
+                                    
+                                    // Open video call form
+                                    VideoCallForm videoForm = new VideoCallForm(_clientSocket, callerId, callerName, _currentUserId);
+                                    videoForm.FormClosed += (s, e) =>
+                                    {
+                                        try
+                                        {
+                                            RichTextBox chatBox = (RichTextBox)this.Controls["chatTextBox"];
+                                            if (chatBox != null)
+                                                chatBox.AppendText($"📞 Video call ended\n");
+                                        }
+                                        catch { }
+                                    };
+                                    videoForm.Show();
+                                }
+                                else
+                                {
+                                    // Send reject to server
+                                    var rejectData = new Dictionary<string, object>
+                                    {
+                                        { "callId", callId }
+                                    };
+                                    CommandPacket rejectPacket = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_REJECT, rejectData);
+                                    _clientSocket.SendPacket(rejectPacket);
+
+                                    chatTextBox.AppendText($"📞 You rejected the video call\n");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                chatTextBox.AppendText($"📞 Error handling video call: {ex.Message}\n");
+                            }
+                        }
+                        break;
+
+                    case CommandType.VIDEO_CALL_ACCEPT:
+                        try
+                        {
+                            // Only open form for COMMAND packets (from server notifying caller)
+                            // Response packets have Message = "Call accepted", Command packets have Message = "OK"
+                            if (packet.Message != null && packet.Message.Contains("Call accepted"))
+                            {
+                                // This is a response confirmation to receiver - don't open form (they already opened it)
+                                chatTextBox.AppendText($"📞 Your call acceptance confirmed\n");
+                                break;
+                            }
+                            
+                            string callId = packet.Data.ContainsKey("callId") ? packet.Data["callId"].ToString() : "";
+                            chatTextBox.AppendText($"📞 Video call accepted by friend\n");
+                            
+                            // Open video call form when call is accepted (CALLER SIDE ONLY)
+                            if (_currentChatFriendId > 0 && !string.IsNullOrEmpty(_currentChatFriendName))
+                            {
+                                VideoCallForm videoForm = new VideoCallForm(_clientSocket, _currentChatFriendId, _currentChatFriendName, _currentUserId);
+                                videoForm.FormClosed += (s, e) =>
+                                {
+                                    try
+                                    {
+                                        RichTextBox chatBox = (RichTextBox)this.Controls["chatTextBox"];
+                                        if (chatBox != null)
+                                            chatBox.AppendText($"📞 Video call ended\n");
+                                    }
+                                    catch { }
+                                };
                                 videoForm.Show();
                             }
                         }
+                        catch (Exception ex)
+                        {
+                            chatTextBox.AppendText($"📞 Error: {ex.Message}\n");
+                        }
+                        break;
+
+                    case CommandType.VIDEO_CALL_REJECT:
+                        try
+                        {
+                            chatTextBox.AppendText($"📞 Video call was rejected\n");
+                        }
+                        catch { }
                         break;
                 }
             }));
@@ -571,9 +750,38 @@ namespace YourChatApp.Client.Forms
             form.Controls.Add(label);
             form.Controls.Add(textBox);
             form.Controls.Add(button);
-            form.ShowDialog();
+            form.AcceptButton = button;
 
-            return textBox.Text;
+            return form.ShowDialog() == DialogResult.OK ? textBox.Text : null;
+        }
+
+        private void Logout_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                DialogResult result = MessageBox.Show(
+                    "Are you sure you want to logout?",
+                    "Logout Confirmation",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result == DialogResult.Yes)
+                {
+                    // Disconnect from server
+                    if (_clientSocket != null && _clientSocket.IsConnected)
+                    {
+                        _clientSocket.Disconnect();
+                        Console.WriteLine("[MainChatForm] Logged out and disconnected");
+                    }
+
+                    // Close this form and return to login
+                    this.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during logout: {ex.Message}", "Logout Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 

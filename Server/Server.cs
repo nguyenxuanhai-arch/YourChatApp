@@ -187,6 +187,17 @@ namespace YourChatApp.Server
         }
 
         /// <summary>
+        /// Lấy tất cả client handlers đang kết nối
+        /// </summary>
+        public List<ClientHandler> GetAllClients()
+        {
+            lock (_lockObj)
+            {
+                return _connectedClients.Values.ToList();
+            }
+        }
+
+        /// <summary>
         /// Xóa client handler khỏi danh sách
         /// </summary>
         public void RemoveClientHandler(int clientId)
