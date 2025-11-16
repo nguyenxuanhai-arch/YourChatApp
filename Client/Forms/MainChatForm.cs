@@ -31,6 +31,8 @@ namespace YourChatApp.Client.Forms
         // Structured current group members with IDs for management operations
         private List<YourChatApp.Shared.Models.User> _currentGroupMemberUsers = new List<YourChatApp.Shared.Models.User>();
         private List<string> _friendsUsernames = new List<string>();
+        // Track pending video calls
+        private Dictionary<string, int> _pendingVideoCallIds = new Dictionary<string, int>(); // callId -> friendId
 
         public MainChatForm(ClientSocket clientSocket, int userId = 0, List<FriendRequest> pendingRequests = null)
         {
@@ -125,18 +127,22 @@ namespace YourChatApp.Client.Forms
 
             try
             {
-                // Send video call request to server
+                // Generate callId for tracking
+                string callId = Guid.NewGuid().ToString();
+                
+                // Store pending call for later matching
+                _pendingVideoCallIds[callId] = _currentChatFriendId;
+                
+                // Send video call request to server with callId
                 var callData = new Dictionary<string, object>
                 {
-                    { "receiverId", _currentChatFriendId }
+                    { "receiverId", _currentChatFriendId },
+                    { "callId", callId }
                 };
                 CommandPacket packet = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_REQUEST, callData);
                 _clientSocket.SendPacket(packet);
 
-                chatTextBox.AppendText($"📞 You initiated a video call with {_currentChatFriendName}\n");
-
-                // Note: VideoCallForm will open when receiving VIDEO_CALL_ACCEPT response
-                // Don't open it immediately - wait for confirmation
+                chatTextBox.AppendText($"📞 Calling {_currentChatFriendName}... Waiting for response...\n");
             }
             catch (Exception ex)
             {
@@ -658,25 +664,29 @@ namespace YourChatApp.Client.Forms
                                 
                                 chatTextBox.AppendText($"📞 Incoming video call from {callerName}\n");
                                 
+                                // Show accept/reject dialog for receiver
                                 DialogResult result = MessageBox.Show(
-                                    $"Incoming video call from {callerName}. Accept?",
-                                    "Video Call",
-                                    MessageBoxButtons.YesNo);
+                                    $"{callerName} is calling you. Accept?",
+                                    "Incoming Video Call",
+                                    MessageBoxButtons.YesNo,
+                                    MessageBoxIcon.Question);
                                 
                                 if (result == DialogResult.Yes)
                                 {
-                                    // Send accept to server
+                                    // Send ACCEPT packet to server
                                     var acceptData = new Dictionary<string, object>
                                     {
-                                        { "callId", callId }
+                                        { "callId", callId },
+                                        { "callerId", callerId }
                                     };
-                                    CommandPacket acceptPacket = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_ACCEPT, acceptData);
+                                    CommandPacket acceptPacket = new CommandPacket(CommandType.VIDEO_CALL_ACCEPT, acceptData);
                                     _clientSocket.SendPacket(acceptPacket);
-
-                                    chatTextBox.AppendText($"📞 You accepted the video call\n");
                                     
-                                    // Open video call form
+                                    chatTextBox.AppendText($"📞 You accepted the call from {callerName}\n");
+                                    
+                                    // Now open video call form for receiver
                                     VideoCallForm videoForm = new VideoCallForm(_clientSocket, callerId, callerName, _currentUserId);
+                                    videoForm.Tag = new { callId = callId, isReceiver = true };
                                     videoForm.FormClosed += (s, e) =>
                                     {
                                         try
@@ -690,15 +700,16 @@ namespace YourChatApp.Client.Forms
                                 }
                                 else
                                 {
-                                    // Send reject to server
+                                    // Send REJECT packet to server
                                     var rejectData = new Dictionary<string, object>
                                     {
-                                        { "callId", callId }
+                                        { "callId", callId },
+                                        { "callerId", callerId }
                                     };
-                                    CommandPacket rejectPacket = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_REJECT, rejectData);
+                                    CommandPacket rejectPacket = new CommandPacket(CommandType.VIDEO_CALL_REJECT, rejectData);
                                     _clientSocket.SendPacket(rejectPacket);
-
-                                    chatTextBox.AppendText($"📞 You rejected the video call\n");
+                                    
+                                    chatTextBox.AppendText($"📞 You rejected the call from {callerName}\n");
                                 }
                             }
                             catch (Exception ex)
@@ -706,28 +717,38 @@ namespace YourChatApp.Client.Forms
                                 chatTextBox.AppendText($"📞 Error handling video call: {ex.Message}\n");
                             }
                         }
-
                         break;
 
                     case CommandType.VIDEO_CALL_ACCEPT:
                         try
                         {
-                            // Only open form for COMMAND packets (from server notifying caller)
-                            // Response packets have Message = "Call accepted", Command packets have Message = "OK"
-                            if (packet.Message != null && packet.Message.Contains("Call accepted"))
+                            string callId = packet.Data.ContainsKey("callId") ? packet.Data["callId"].ToString() : "";
+                            string accepterName = packet.Data.ContainsKey("accepterName") ? packet.Data["accepterName"].ToString() : "Friend";
+                            int accepterId = packet.Data.ContainsKey("accepterId") ? Convert.ToInt32(packet.Data["accepterId"]) : 0;
+                            
+                            chatTextBox.AppendText($"📞 {accepterName} accepted your call\n");
+                            
+                            // Look up the friend info using the stored callId
+                            int friendId = accepterId > 0 ? accepterId : (_currentChatFriendId > 0 ? _currentChatFriendId : 0);
+                            string friendName = accepterName;
+                            
+                            // Try to find friend info from pending calls
+                            if (!string.IsNullOrEmpty(callId) && _pendingVideoCallIds.ContainsKey(callId))
                             {
-                                // This is a response confirmation to receiver - don't open form (they already opened it)
-                                chatTextBox.AppendText($"📞 Your call acceptance confirmed\n");
-                                break;
+                                friendId = _pendingVideoCallIds[callId];
+                                _pendingVideoCallIds.Remove(callId);
                             }
                             
-                            string callId = packet.Data.ContainsKey("callId") ? packet.Data["callId"].ToString() : "";
-                            chatTextBox.AppendText($"📞 Video call accepted by friend\n");
+                            // Get friend's display name if we have it
+                            var friend = _friends.FirstOrDefault(f => f.UserId == friendId);
+                            if (friend != null)
+                                friendName = friend.DisplayName;
                             
-                            // Open video call form when call is accepted (CALLER SIDE ONLY)
-                            if (_currentChatFriendId > 0 && !string.IsNullOrEmpty(_currentChatFriendName))
+                            // Open video call form for caller when acceptance is received
+                            if (friendId > 0 && !string.IsNullOrEmpty(friendName))
                             {
-                                VideoCallForm videoForm = new VideoCallForm(_clientSocket, _currentChatFriendId, _currentChatFriendName, _currentUserId);
+                                VideoCallForm videoForm = new VideoCallForm(_clientSocket, friendId, friendName, _currentUserId);
+                                videoForm.Tag = new { callId = callId, isReceiver = false };
                                 videoForm.FormClosed += (s, e) =>
                                 {
                                     try
@@ -738,6 +759,10 @@ namespace YourChatApp.Client.Forms
                                     catch { }
                                 };
                                 videoForm.Show();
+                            }
+                            else
+                            {
+                                chatTextBox.AppendText($"📞 Error: Could not identify call recipient\n");
                             }
                         }
                         catch (Exception ex)

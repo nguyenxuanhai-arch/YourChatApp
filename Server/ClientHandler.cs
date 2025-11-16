@@ -631,8 +631,10 @@ namespace YourChatApp.Server
                 int callerId = _user.UserId;
                 string callerName = _user.DisplayName;
 
-                // Generate unique callId
-                string callId = Guid.NewGuid().ToString();
+                // Use callId from client if provided, otherwise generate one
+                string callId = packet.Data.ContainsKey("callId") 
+                    ? packet.Data["callId"].ToString() 
+                    : Guid.NewGuid().ToString();
 
                 Console.WriteLine($"[VIDEO] Call request from {callerName} (UserId: {callerId}) to UserId: {receiverId}, CallId: {callId}");
 
@@ -762,7 +764,9 @@ namespace YourChatApp.Server
                     var acceptData = new Dictionary<string, object>
                     {
                         { "callId", callId },
-                        { "status", "accepted" }
+                        { "status", "accepted" },
+                        { "accepterId", _user.UserId },
+                        { "accepterName", _user.DisplayName ?? _user.Username }
                     };
                     CommandPacket acceptPacket = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_ACCEPT, acceptData);
                     _server.SendToUser(callerId, acceptPacket);
