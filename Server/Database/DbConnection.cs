@@ -217,6 +217,25 @@ namespace YourChatApp.Server.Database
                     command.ExecuteNonQuery();
                     Console.WriteLine("[✓] Table created: GroupMembers");
 
+                    // Tạo bảng GroupInvites
+                    Console.WriteLine("[DB] Creating table: GroupInvites...");
+                    command.CommandText = @"
+                        CREATE TABLE IF NOT EXISTS `GroupInvites` (
+                            InviteId INT PRIMARY KEY AUTO_INCREMENT,
+                            GroupId INT NOT NULL,
+                            InviterId INT NOT NULL,
+                            InvitedUserId INT NOT NULL,
+                            Status INT DEFAULT 0,
+                            InvitedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            RespondedAt TIMESTAMP NULL,
+                            FOREIGN KEY (GroupId) REFERENCES `Groups`(GroupId),
+                            FOREIGN KEY (InviterId) REFERENCES Users(UserId),
+                            FOREIGN KEY (InvitedUserId) REFERENCES Users(UserId),
+                            UNIQUE KEY unique_invite (GroupId, InvitedUserId)
+                        )";
+                    command.ExecuteNonQuery();
+                    Console.WriteLine("[✓] Table created: GroupInvites");
+
                     // Tạo bảng VideoCallRequests
                     Console.WriteLine("[DB] Creating table: VideoCallRequests...");
                     command.CommandText = @"

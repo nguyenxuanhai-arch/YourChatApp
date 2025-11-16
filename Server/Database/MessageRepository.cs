@@ -62,6 +62,33 @@ namespace YourChatApp.Server.Database
             return messages;
         }
 
+        public List<Message> GetGroupMessages(int groupId, int limit = 100)
+        {
+            var messages = new List<Message>();
+            try
+            {
+                using (var connection = _dbConnection.OpenConnection())
+                {
+                    var command = connection.CreateCommand();
+                    command.CommandText = @"SELECT MessageId, SenderId, ReceiverId, GroupId, Content, MessageType, SentAt, ReadAt FROM Messages WHERE GroupId = @GroupId ORDER BY SentAt DESC LIMIT @Limit";
+                    command.Parameters.AddWithValue("@GroupId", groupId);
+                    command.Parameters.AddWithValue("@Limit", limit);
+
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                            messages.Add(MapReaderToMessage(reader));
+                    }
+                }
+                messages.Reverse();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] GetGroupMessages failed: {ex.Message}");
+            }
+            return messages;
+        }
+
         public List<Message> GetUnreadMessages(int userId)
         {
             var messages = new List<Message>();

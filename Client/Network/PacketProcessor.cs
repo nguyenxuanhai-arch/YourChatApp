@@ -80,12 +80,12 @@ namespace YourChatApp.Client.Network
 
                 return packet;
             }
-            catch (IOException ioEx)
+            catch (IOException)
             {
                 // Network connection issues - client disconnected
                 return null;
             }
-            catch (System.Net.Sockets.SocketException sockEx)
+            catch (System.Net.Sockets.SocketException)
             {
                 // Socket-specific error
                 return null;

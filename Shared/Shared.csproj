@@ -4,6 +4,7 @@
     <TargetFramework>net6.0</TargetFramework>
     <AssemblyName>YourChatApp.Shared</AssemblyName>
     <RootNamespace>YourChatApp.Shared</RootNamespace>
+    <NoWarn>$(NoWarn);NETSDK1138</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

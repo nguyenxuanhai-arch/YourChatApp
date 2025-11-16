@@ -165,12 +165,44 @@ namespace YourChatApp.Server
                     response = HandleVideoCallReject(packet);
                     break;
 
+                case CommandType.VIDEO_CALL_END:
+                    response = HandleVideoCallEnd(packet);
+                    break;
+
                 case CommandType.VIDEO_AUDIO_DATA:
                     response = HandleVideoAudioData(packet);
                     break;
 
                 case CommandType.PING:
                     response = HandlePing(packet);
+                    break;
+
+                case CommandType.CREATE_GROUP:
+                    response = HandleCreateGroup(packet);
+                    break;
+
+                case CommandType.GET_GROUPS:
+                    response = HandleGetGroups(packet);
+                    break;
+                
+                case CommandType.INVITE_TO_GROUP:
+                    response = HandleInviteToGroup(packet);
+                    break;
+
+                case CommandType.LEAVE_GROUP:
+                    response = HandleLeaveGroup(packet);
+                    break;
+
+                case CommandType.GROUP_MESSAGE:
+                    response = HandleGroupMessage(packet);
+                    break;
+
+                case CommandType.DELETE_GROUP:
+                    response = HandleDeleteGroup(packet);
+                    break;
+
+                case CommandType.ERROR:
+                    // noop - error forwarded
                     break;
 
                 default:
@@ -828,7 +860,42 @@ namespace YourChatApp.Server
             catch (Exception ex)
             {
                 Console.WriteLine($"[ERROR] Video call reject failed: {ex.Message}");
-                return PacketProcessor.CreateErrorResponse($"Video call reject failed: {ex.Message}");
+                return PacketProcessor.CreateErrorResponse(ex.Message);
+            }
+        }
+
+        private CommandPacket HandleVideoCallEnd(CommandPacket packet)
+        {
+            try
+            {
+                if (_user == null)
+                    return PacketProcessor.CreateErrorResponse("Not authenticated");
+
+                if (!packet.Data.ContainsKey("friendId"))
+                    return PacketProcessor.CreateErrorResponse("Missing friendId");
+
+                int friendId = Convert.ToInt32(packet.Data["friendId"]);
+                string callId = packet.Data.ContainsKey("callId") ? packet.Data["callId"].ToString() : "";
+
+                Console.WriteLine($"[VIDEO] Call ended by UserId {_user.UserId}, notifying UserId {friendId}");
+
+                // Forward END_CALL signal to the friend
+                var endData = new Dictionary<string, object>
+                {
+                    { "callId", callId },
+                    { "userId", _user.UserId },
+                    { "status", "ended" }
+                };
+                CommandPacket endPacket = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_END, endData);
+                _server.SendToUser(friendId, endPacket);
+                Console.WriteLine($"[VIDEO] Call end notification sent to UserId {friendId}");
+
+                return PacketProcessor.CreateResponse(CommandType.VIDEO_CALL_END, 200, "Call ended");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Video call end failed: {ex.Message}");
+                return PacketProcessor.CreateErrorResponse(ex.Message);
             }
         }
 
@@ -872,6 +939,355 @@ namespace YourChatApp.Server
         private CommandPacket HandlePing(CommandPacket packet)
         {
             return PacketProcessor.CreateResponse(CommandType.PONG, 200, "Pong");
+        }
+
+        private CommandPacket HandleCreateGroup(CommandPacket packet)
+        {
+            try
+            {
+                if (_user == null)
+                    return PacketProcessor.CreateErrorResponse("Not authenticated");
+
+                if (!packet.Data.ContainsKey("groupName"))
+                    return PacketProcessor.CreateErrorResponse("Missing groupName");
+
+                string groupName = packet.Data["groupName"].ToString();
+                var description = packet.Data.ContainsKey("description") ? packet.Data["description"].ToString() : "";
+
+                var group = new YourChatApp.Shared.Models.Group
+                {
+                    GroupName = groupName,
+                    Description = description,
+                    CreatedBy = _user.UserId,
+                    CreatedAt = DateTime.Now
+                };
+
+                var groupRepo = new GroupRepository(DbConnection.Instance);
+                int groupId = groupRepo.CreateGroup(group);
+
+                // Add additional members if provided (expecting list of ints)
+                if (packet.Data.ContainsKey("memberIds"))
+                {
+                    try
+                    {
+                        var raw = packet.Data["memberIds"];
+                        if (raw is System.Collections.IEnumerable enumerable)
+                        {
+                            foreach (var obj in enumerable)
+                            {
+                                try
+                                {
+                                    int memberId = Convert.ToInt32(obj);
+                                    if (memberId != _user.UserId)
+                                        groupRepo.AddGroupMember(groupId, memberId);
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                var responseData = new Dictionary<string, object>
+                {
+                    { "groupId", groupId },
+                    { "groupName", groupName }
+                };
+
+                return PacketProcessor.CreateResponse(CommandType.CREATE_GROUP, 201, "Group created", responseData);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Create group failed: {ex.Message}");
+                return PacketProcessor.CreateErrorResponse($"Create group failed: {ex.Message}");
+            }
+        }
+
+        private CommandPacket HandleGetGroups(CommandPacket packet)
+        {
+            try
+            {
+                if (_user == null)
+                    return PacketProcessor.CreateErrorResponse("Not authenticated");
+
+                var groupRepo = new GroupRepository(DbConnection.Instance);
+
+                // If client requested members for a specific group
+                if (packet.Data.ContainsKey("groupId"))
+                {
+                    int groupId = Convert.ToInt32(packet.Data["groupId"]);
+
+                    var members = groupRepo.GetGroupMembers(groupId);
+
+                    var memberList = new List<object>();
+                    foreach (var m in members)
+                    {
+                        memberList.Add(new
+                        {
+                            userId = m.UserId,
+                            username = m.Username,
+                            displayName = m.DisplayName
+                        });
+                    }
+
+                    var responseDataMembers = new Dictionary<string, object>
+                    {
+                        { "groupId", groupId },
+                        { "members", memberList }
+                    };
+
+                    // Optionally include recent messages if client asked for them
+                    if (packet.Data.ContainsKey("includeMessages") && Convert.ToBoolean(packet.Data["includeMessages"]))
+                    {
+                        var msgRepo = new MessageRepository();
+                        var msgs = msgRepo.GetGroupMessages(groupId, 200);
+                        var msgList = new List<object>();
+                        var userRepo = new UserRepository();
+                        foreach (var msg in msgs)
+                        {
+                            // Try to include sender username and display name for client convenience
+                            string senderUsername = null;
+                            string senderDisplayName = null;
+                            try
+                            {
+                                var senderUser = userRepo.GetUserById(msg.SenderId);
+                                if (senderUser != null)
+                                {
+                                    senderUsername = senderUser.Username;
+                                    senderDisplayName = senderUser.DisplayName;
+                                }
+                            }
+                            catch { }
+
+                            msgList.Add(new Dictionary<string, object>
+                            {
+                                { "messageId", msg.MessageId },
+                                { "senderId", msg.SenderId },
+                                { "senderUsername", senderUsername },
+                                { "senderDisplayName", senderDisplayName },
+                                { "content", msg.Content },
+                                { "sentAt", msg.SentAt }
+                            });
+                        }
+                        responseDataMembers["messages"] = msgList;
+                    }
+
+                    return PacketProcessor.CreateResponse(CommandType.GET_GROUPS, 200, "Group members retrieved", responseDataMembers);
+                }
+
+                // Otherwise return the list of groups the user belongs to
+                var groups = groupRepo.GetUserGroups(_user.UserId);
+
+                var groupsList = new List<object>();
+                foreach (var g in groups)
+                {
+                    groupsList.Add(new
+                    {
+                        groupId = g.GroupId,
+                        groupName = g.GroupName,
+                        description = g.Description,
+                        createdBy = g.CreatedBy,
+                        createdAt = g.CreatedAt
+                    });
+                }
+
+                var responseData = new Dictionary<string, object>
+                {
+                    { "groups", groupsList }
+                };
+
+                return PacketProcessor.CreateResponse(CommandType.GET_GROUPS, 200, "Groups retrieved", responseData);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Get groups failed: {ex.Message}");
+                return PacketProcessor.CreateErrorResponse($"Get groups failed: {ex.Message}");
+            }
+        }
+
+        private CommandPacket HandleInviteToGroup(CommandPacket packet)
+        {
+            try
+            {
+                if (_user == null)
+                    return PacketProcessor.CreateErrorResponse("Not authenticated");
+
+                if (!packet.Data.ContainsKey("groupId") || !packet.Data.ContainsKey("userId"))
+                    return PacketProcessor.CreateErrorResponse("Missing groupId or userId");
+
+                int groupId = Convert.ToInt32(packet.Data["groupId"]);
+                int userIdToAdd = Convert.ToInt32(packet.Data["userId"]);
+
+                var groupRepo = new GroupRepository(DbConnection.Instance);
+                var group = groupRepo.GetGroupById(groupId);
+                if (group == null)
+                    return PacketProcessor.CreateErrorResponse("Group not found");
+
+                // Only allow add if requester is a member of the group (or creator)
+                if (!groupRepo.IsGroupMember(groupId, _user.UserId) && group.CreatedBy != _user.UserId)
+                    return PacketProcessor.CreateErrorResponse("Not authorized to add members");
+
+                bool added = groupRepo.AddGroupMember(groupId, userIdToAdd);
+                if (added)
+                {
+                    // Notify the added user if online
+                    var notify = new Dictionary<string, object>
+                    {
+                        { "groupId", groupId },
+                        { "groupName", group.GroupName },
+                        { "addedBy", _user.UserId }
+                    };
+                    var packetNotify = PacketProcessor.CreateCommand(CommandType.INVITE_TO_GROUP, notify);
+                    _server.SendToUser(userIdToAdd, packetNotify);
+
+                    return PacketProcessor.CreateResponse(CommandType.INVITE_TO_GROUP, 200, "Member added");
+                }
+
+                return PacketProcessor.CreateErrorResponse("Failed to add member");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Invite to group failed: {ex.Message}");
+                return PacketProcessor.CreateErrorResponse($"Invite to group failed: {ex.Message}");
+            }
+        }
+
+        private CommandPacket HandleLeaveGroup(CommandPacket packet)
+        {
+            try
+            {
+                if (_user == null)
+                    return PacketProcessor.CreateErrorResponse("Not authenticated");
+
+                if (!packet.Data.ContainsKey("groupId") || !packet.Data.ContainsKey("userId"))
+                    return PacketProcessor.CreateErrorResponse("Missing groupId or userId");
+
+                int groupId = Convert.ToInt32(packet.Data["groupId"]);
+                int userId = Convert.ToInt32(packet.Data["userId"]);
+
+                var groupRepo = new GroupRepository(DbConnection.Instance);
+                var group = groupRepo.GetGroupById(groupId);
+                if (group == null)
+                    return PacketProcessor.CreateErrorResponse("Group not found");
+
+                // Allow removal if requester is the user themselves or group creator
+                if (userId != _user.UserId && group.CreatedBy != _user.UserId)
+                    return PacketProcessor.CreateErrorResponse("Not authorized to remove this member");
+
+                bool removed = groupRepo.RemoveGroupMember(groupId, userId);
+                if (removed)
+                {
+                    var notify = new Dictionary<string, object>
+                    {
+                        { "groupId", groupId },
+                        { "userId", userId }
+                    };
+                    var packetNotify = PacketProcessor.CreateCommand(CommandType.LEAVE_GROUP, notify);
+                    _server.SendToUser(userId, packetNotify);
+
+                    return PacketProcessor.CreateResponse(CommandType.LEAVE_GROUP, 200, "Member removed");
+                }
+
+                return PacketProcessor.CreateErrorResponse("Failed to remove member");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Leave group failed: {ex.Message}");
+                return PacketProcessor.CreateErrorResponse($"Leave group failed: {ex.Message}");
+            }
+        }
+
+        private CommandPacket HandleGroupMessage(CommandPacket packet)
+        {
+            try
+            {
+                if (_user == null)
+                    return PacketProcessor.CreateErrorResponse("Not authenticated");
+
+                if (!packet.Data.ContainsKey("groupId") || !packet.Data.ContainsKey("content"))
+                    return PacketProcessor.CreateErrorResponse("Missing groupId or content");
+
+                int groupId = Convert.ToInt32(packet.Data["groupId"]);
+                string content = packet.Data["content"].ToString();
+
+                var groupRepo = new GroupRepository(DbConnection.Instance);
+                if (!groupRepo.IsGroupMember(groupId, _user.UserId))
+                    return PacketProcessor.CreateErrorResponse("Not a member of the group");
+
+                // Save message to DB (MessageRepository supports GroupId)
+                var message = new YourChatApp.Shared.Models.Message
+                {
+                    SenderId = _user.UserId,
+                    GroupId = groupId,
+                    Content = content,
+                    MessageType = MessageType.Text,
+                    SentAt = DateTime.Now
+                };
+
+                var messageRepo = new MessageRepository();
+                if (messageRepo.SaveMessage(message))
+                {
+                    // Broadcast to all group members
+                    var members = groupRepo.GetGroupMembers(groupId);
+                    var userIds = members.Select(m => m.UserId).ToList();
+
+                    var msgData = new Dictionary<string, object>
+                    {
+                        { "groupId", groupId },
+                        { "fromUserId", _user.UserId },
+                        { "fromUsername", _user.Username },
+                        { "fromDisplayName", _user.DisplayName },
+                        { "content", content },
+                        { "sentAt", message.SentAt }
+                    };
+                    var groupPacket = PacketProcessor.CreateCommand(CommandType.GROUP_MESSAGE, msgData);
+                    _server.SendToUsers(userIds, groupPacket);
+                }
+
+                return PacketProcessor.CreateResponse(CommandType.GROUP_MESSAGE, 200, "Group message sent");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Group message failed: {ex.Message}");
+                return PacketProcessor.CreateErrorResponse($"Group message failed: {ex.Message}");
+            }
+        }
+
+        private CommandPacket HandleDeleteGroup(CommandPacket packet)
+        {
+            try
+            {
+                if (_user == null)
+                    return PacketProcessor.CreateErrorResponse("Not authenticated");
+
+                if (!packet.Data.ContainsKey("groupId"))
+                    return PacketProcessor.CreateErrorResponse("Missing groupId");
+
+                int groupId = Convert.ToInt32(packet.Data["groupId"]);
+                var groupRepo = new GroupRepository(DbConnection.Instance);
+                var group = groupRepo.GetGroupById(groupId);
+                if (group == null)
+                    return PacketProcessor.CreateErrorResponse("Group not found");
+
+                // Only creator can delete group
+                if (group.CreatedBy != _user.UserId)
+                    return PacketProcessor.CreateErrorResponse("Only the group creator can delete the group");
+
+                bool deleted = groupRepo.DeleteGroup(groupId);
+                if (deleted)
+                {
+                    // Notify members (best effort)
+                    // Getting members before deletion isn't available here because DeleteGroup already removed them.
+                    return PacketProcessor.CreateResponse(CommandType.DELETE_GROUP, 200, "Group deleted");
+                }
+
+                return PacketProcessor.CreateErrorResponse("Failed to delete group");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Delete group failed: {ex.Message}");
+                return PacketProcessor.CreateErrorResponse($"Delete group failed: {ex.Message}");
+            }
         }
 
         #endregion

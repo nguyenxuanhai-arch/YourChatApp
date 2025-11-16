@@ -7,7 +7,7 @@ using YourChatApp.Shared.Models;
 
 namespace YourChatApp.Client.Forms
 {
-    public class MainChatForm : Form
+    public partial class MainChatForm : Form
     {
         private class FriendInfo
         {
@@ -23,19 +23,32 @@ namespace YourChatApp.Client.Forms
         private int _currentChatFriendId = 0; // Currently selected friend for chat
         private string _currentChatFriendName = ""; // Currently selected friend's name
         private int _currentUserId = 0; // Current logged-in user's ID
+        private List<Shared.Models.Group> _groups = new List<Shared.Models.Group>();
+        private int _currentGroupId = 0;
+        private string _currentGroupName = "";
+        // In-memory storage for group members and friend usernames (UI moved to modals)
+        private List<string> _currentGroupMembers = new List<string>();
+        // Structured current group members with IDs for management operations
+        private List<YourChatApp.Shared.Models.User> _currentGroupMemberUsers = new List<YourChatApp.Shared.Models.User>();
+        private List<string> _friendsUsernames = new List<string>();
 
         public MainChatForm(ClientSocket clientSocket, int userId = 0, List<FriendRequest> pendingRequests = null)
         {
+            InitializeComponent();
+
             _clientSocket = clientSocket;
             _currentUserId = userId;
             _pendingRequests = pendingRequests ?? new List<FriendRequest>();
             _friendUserIds = new Dictionary<string, int>();
             _friends = new List<FriendInfo>();
             Console.WriteLine($"[MainChatForm] Initialized with userId={userId}, pendingRequests={_pendingRequests.Count}");
-            BuildUI();
             _clientSocket.OnPacketReceived += HandleServerMessage;
             this.Load += MainChatForm_Load;
             this.FormClosing += MainChatForm_FormClosing;
+            // Wire double-click on groups list to load group messages
+            try { this.groupsListBox.DoubleClick += GroupsListBox_DoubleClick; } catch { }
+            // Wire Enter key on group message input to send (Shift+Enter -> newline)
+            try { this.groupMessageInput.KeyDown += GroupMessageInput_KeyDown; } catch { }
         }
 
         private void MainChatForm_FormClosing(object sender, FormClosingEventArgs e)
@@ -60,6 +73,9 @@ namespace YourChatApp.Client.Forms
             // Auto-load friends list on form load
             CommandPacket packet = new CommandPacket(CommandType.GET_FRIENDS);
             _clientSocket.SendPacket(packet);
+            // Request groups list
+            CommandPacket groupPacket = new CommandPacket(CommandType.GET_GROUPS);
+            _clientSocket.SendPacket(groupPacket);
             
             // Populate pending friend requests in notification panel
             PopulatePendingRequests();
@@ -67,132 +83,11 @@ namespace YourChatApp.Client.Forms
 
         private void PopulatePendingRequests()
         {
-            ListBox notificationListBox = (ListBox)this.Controls.Find("notificationListBox", true).FirstOrDefault();
-            if (notificationListBox != null)
+            notificationListBox.Items.Clear();
+            foreach (var request in _pendingRequests)
             {
-                notificationListBox.Items.Clear();
-                foreach (var request in _pendingRequests)
-                {
-                    notificationListBox.Items.Add($"📝 {request.DisplayName} (@{request.Username})");
-                }
+                notificationListBox.Items.Add($"📝 {request.DisplayName} (@{request.Username})");
             }
-        }
-
-        private void BuildUI()
-        {
-            this.Text = "YourChatApp - Main Chat";
-            this.Size = new System.Drawing.Size(1200, 600);
-            this.StartPosition = FormStartPosition.CenterScreen;
-
-            // MenuStrip
-            MenuStrip menuStrip = new MenuStrip();
-            
-            ToolStripMenuItem fileMenu = new ToolStripMenuItem("&File");
-            fileMenu.DropDownItems.Add("&Logout", null, Logout_Click);
-            fileMenu.DropDownItems.Add("E&xit", null, (s, e) => this.Close());
-            menuStrip.Items.Add(fileMenu);
-
-            ToolStripMenuItem friendsMenu = new ToolStripMenuItem("&Friends");
-            friendsMenu.DropDownItems.Add("&Add Friend", null, AddFriend_Click);
-            friendsMenu.DropDownItems.Add("&View Friend List", null, ViewFriends_Click);
-            menuStrip.Items.Add(friendsMenu);
-
-            ToolStripMenuItem callMenu = new ToolStripMenuItem("&Call");
-            callMenu.DropDownItems.Add("&Video Call", null, VideoCall_Click);
-            menuStrip.Items.Add(callMenu);
-
-            this.MainMenuStrip = menuStrip;
-            this.Controls.Add(menuStrip);
-
-            // Friends ListBox (Bên trái)
-            Label friendsLabel = new Label();
-            friendsLabel.Text = "Friends";
-            friendsLabel.Font = new System.Drawing.Font("Arial", 12, System.Drawing.FontStyle.Bold);
-            friendsLabel.Location = new System.Drawing.Point(10, 30);
-            friendsLabel.Size = new System.Drawing.Size(200, 25);
-            this.Controls.Add(friendsLabel);
-
-            ListBox friendsListBox = new ListBox();
-            friendsListBox.Name = "friendsListBox";
-            friendsListBox.Location = new System.Drawing.Point(10, 60);
-            friendsListBox.Size = new System.Drawing.Size(200, 480);
-            friendsListBox.DoubleClick += FriendsList_DoubleClick;
-            friendsListBox.SelectedIndexChanged += FriendsList_SelectedIndexChanged;
-            this.Controls.Add(friendsListBox);
-
-            // Chat Area (Ở giữa và bên phải)
-            Label chatLabel = new Label();
-            chatLabel.Text = "Messages";
-            chatLabel.Font = new System.Drawing.Font("Arial", 12, System.Drawing.FontStyle.Bold);
-            chatLabel.Location = new System.Drawing.Point(220, 30);
-            chatLabel.Size = new System.Drawing.Size(500, 25);
-            this.Controls.Add(chatLabel);
-
-            // Video Call Button (top right of chat)
-            Button videoCallButton = new Button();
-            videoCallButton.Name = "videoCallButton";
-            videoCallButton.Text = "📞 Video Call";
-            videoCallButton.Location = new System.Drawing.Point(730, 30);
-            videoCallButton.Size = new System.Drawing.Size(140, 25);
-            videoCallButton.Click += VideoCall_Click;
-            this.Controls.Add(videoCallButton);
-
-            RichTextBox chatTextBox = new RichTextBox();
-            chatTextBox.Name = "chatTextBox";
-            chatTextBox.Location = new System.Drawing.Point(220, 60);
-            chatTextBox.Size = new System.Drawing.Size(650, 380);
-            chatTextBox.ReadOnly = true;
-            this.Controls.Add(chatTextBox);
-
-            // Message Input
-            TextBox messageInputTextBox = new TextBox();
-            messageInputTextBox.Name = "messageInputTextBox";
-            messageInputTextBox.Location = new System.Drawing.Point(220, 450);
-            messageInputTextBox.Size = new System.Drawing.Size(570, 90);
-            messageInputTextBox.Multiline = true;
-            messageInputTextBox.KeyDown += MessageInput_KeyDown;
-            this.Controls.Add(messageInputTextBox);
-
-            // Send Button
-            Button sendButton = new Button();
-            sendButton.Text = "Send";
-            sendButton.Location = new System.Drawing.Point(795, 450);
-            sendButton.Size = new System.Drawing.Size(75, 90);
-            sendButton.Click += SendButton_Click;
-            this.Controls.Add(sendButton);
-
-            // Notifications Panel (Bên phải)
-            Panel notificationPanel = new Panel();
-            notificationPanel.Name = "notificationPanel";
-            notificationPanel.Location = new System.Drawing.Point(880, 30);
-            notificationPanel.Size = new System.Drawing.Size(300, 510);
-            notificationPanel.BorderStyle = BorderStyle.FixedSingle;
-            notificationPanel.BackColor = System.Drawing.Color.WhiteSmoke;
-            this.Controls.Add(notificationPanel);
-
-            Label notificationLabel = new Label();
-            notificationLabel.Text = "🔔 Friend Requests";
-            notificationLabel.Font = new System.Drawing.Font("Arial", 11, System.Drawing.FontStyle.Bold);
-            notificationLabel.Location = new System.Drawing.Point(10, 10);
-            notificationLabel.Size = new System.Drawing.Size(280, 25);
-            notificationPanel.Controls.Add(notificationLabel);
-
-            ListBox notificationListBox = new ListBox();
-            notificationListBox.Name = "notificationListBox";
-            notificationListBox.Location = new System.Drawing.Point(10, 40);
-            notificationListBox.Size = new System.Drawing.Size(280, 460);
-            notificationListBox.BackColor = System.Drawing.Color.White;
-            notificationListBox.DoubleClick += NotificationListBox_DoubleClick;
-            notificationPanel.Controls.Add(notificationListBox);
-
-            // Status Label
-            Label statusLabel = new Label();
-            statusLabel.Name = "statusLabel";
-            statusLabel.Location = new System.Drawing.Point(10, 550);
-            statusLabel.Size = new System.Drawing.Size(850, 20);
-            statusLabel.Text = "Connected";
-            statusLabel.ForeColor = System.Drawing.Color.Green;
-            this.Controls.Add(statusLabel);
         }
 
         private void AddFriend_Click(object sender, EventArgs e)
@@ -238,7 +133,6 @@ namespace YourChatApp.Client.Forms
                 CommandPacket packet = PacketProcessor.CreateCommand(CommandType.VIDEO_CALL_REQUEST, callData);
                 _clientSocket.SendPacket(packet);
 
-                RichTextBox chatTextBox = (RichTextBox)this.Controls["chatTextBox"];
                 chatTextBox.AppendText($"📞 You initiated a video call with {_currentChatFriendName}\n");
 
                 // Note: VideoCallForm will open when receiving VIDEO_CALL_ACCEPT response
@@ -252,7 +146,6 @@ namespace YourChatApp.Client.Forms
 
         private void FriendsList_DoubleClick(object sender, EventArgs e)
         {
-            ListBox friendsListBox = (ListBox)this.Controls["friendsListBox"];
             if (friendsListBox.SelectedIndex >= 0)
             {
                 int selectedIndex = friendsListBox.SelectedIndex;
@@ -263,7 +156,6 @@ namespace YourChatApp.Client.Forms
                     _currentChatFriendName = friend.DisplayName;
                     
                     // Load chat history in main form
-                    RichTextBox chatTextBox = (RichTextBox)this.Controls["chatTextBox"];
                     chatTextBox.Clear();
                     chatTextBox.AppendText($"=== Chat with {friend.DisplayName} (@{friend.Username}) ===\n\n");
                     chatTextBox.AppendText("Loading messages...\n");
@@ -281,7 +173,6 @@ namespace YourChatApp.Client.Forms
 
         private void FriendsList_SelectedIndexChanged(object sender, EventArgs e)
         {
-            ListBox friendsListBox = (ListBox)this.Controls["friendsListBox"];
             if (friendsListBox.SelectedIndex >= 0)
             {
                 int selectedIndex = friendsListBox.SelectedIndex;
@@ -297,8 +188,6 @@ namespace YourChatApp.Client.Forms
 
         private void SendButton_Click(object sender, EventArgs e)
         {
-            TextBox messageInputTextBox = (TextBox)this.Controls["messageInputTextBox"];
-            RichTextBox chatTextBox = (RichTextBox)this.Controls["chatTextBox"];
             string message = messageInputTextBox.Text.Trim();
 
             if (string.IsNullOrEmpty(message))
@@ -349,9 +238,6 @@ namespace YourChatApp.Client.Forms
         {
             this.Invoke(new Action(() =>
             {
-                RichTextBox chatTextBox = (RichTextBox)this.Controls["chatTextBox"];
-                ListBox notificationListBox = (ListBox)this.Controls.Find("notificationListBox", true).FirstOrDefault() as ListBox;
-
                 switch (packet.Command)
                 {
                     case CommandType.FRIEND_REQUEST:
@@ -384,10 +270,14 @@ namespace YourChatApp.Client.Forms
                         }
                         break;
 
+                        case CommandType.GROUP_MESSAGE:
+                            // Broadcasted group message
+                            HandleIncomingGroupMessage(packet);
+                            break;
+
                     case CommandType.GET_FRIENDS:
                         if (packet.Data.ContainsKey("friends"))
                         {
-                            ListBox friendsListBox = (ListBox)this.Controls["friendsListBox"];
                             friendsListBox.Items.Clear();
                             _friendUserIds.Clear();
                             _friends.Clear();
@@ -463,6 +353,201 @@ namespace YourChatApp.Client.Forms
                             {
                                 chatTextBox.AppendText("No friends yet\n");
                             }
+                            // Update friends selection list for group creation
+                            try { UpdateFriendsForGroup(); } catch { }
+                        }
+                        break;
+
+                    case CommandType.GET_GROUPS:
+                        // Handle groups list
+                        if (packet.Data.ContainsKey("groups"))
+                        {
+                            try
+                            {
+                                var groupsObj = packet.Data["groups"];
+                                _groups.Clear();
+                                groupsListBox.Items.Clear();
+
+                                if (groupsObj is System.Collections.IEnumerable enumerable)
+                                {
+                                    foreach (var g in enumerable)
+                                    {
+                                        try
+                                        {
+                                            // Expect dictionary-like objects
+                                            if (g is System.Collections.Generic.IDictionary<string, object> dict)
+                                            {
+                                                int gid = dict.ContainsKey("groupId") ? Convert.ToInt32(dict["groupId"]) : 0;
+                                                string gname = dict.ContainsKey("groupName") ? dict["groupName"].ToString() : "Unnamed";
+                                                string desc = dict.ContainsKey("description") ? dict["description"].ToString() : "";
+                                                int createdBy = dict.ContainsKey("createdBy") ? Convert.ToInt32(dict["createdBy"]) : 0;
+                                                DateTime createdAt = dict.ContainsKey("createdAt") ? Convert.ToDateTime(dict["createdAt"]) : DateTime.Now;
+
+                                                var group = new Shared.Models.Group
+                                                {
+                                                    GroupId = gid,
+                                                    GroupName = gname,
+                                                    Description = desc,
+                                                    CreatedBy = createdBy,
+                                                    CreatedAt = createdAt
+                                                };
+                                                _groups.Add(group);
+                                                groupsListBox.Items.Add(gname);
+                                            }
+                                            else
+                                            {
+                                                string json = Newtonsoft.Json.JsonConvert.SerializeObject(g);
+                                                var group = Newtonsoft.Json.JsonConvert.DeserializeObject<Shared.Models.Group>(json);
+                                                if (group != null)
+                                                {
+                                                    _groups.Add(group);
+                                                    groupsListBox.Items.Add(group.GroupName);
+                                                }
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+
+                        // Handle members list response (when GET_GROUPS with groupId requested)
+                        if (packet.Data.ContainsKey("members"))
+                        {
+                            try
+                            {
+                                _currentGroupMembers.Clear();
+                        // Handle messages for the group (when GET_GROUPS with includeMessages=true)
+                        if (packet.Data.ContainsKey("messages"))
+                        {
+                            try
+                            {
+                                groupChatTextBox.Clear();
+                                if (!string.IsNullOrEmpty(_currentGroupName))
+                                    groupChatTextBox.AppendText($"=== Group: {_currentGroupName} ===\n\n");
+
+                                var messagesObj = packet.Data["messages"];
+                                if (messagesObj is System.Collections.IEnumerable msgEnum)
+                                {
+                                    int mcount = 0;
+                                    foreach (var mo in msgEnum)
+                                    {
+                                        mcount++;
+                                        int senderId = 0;
+                                        string fromUsername = null;
+                                        string senderDisplayName = null;
+                                        string content = "";
+
+                                        // Support multiple runtime representations (Dictionary, JObject, dynamic)
+                                            if (mo is System.Collections.Generic.IDictionary<string, object> md)
+                                            {
+                                                senderId = md.ContainsKey("senderId") ? Convert.ToInt32(md["senderId"]) : 0;
+                                                fromUsername = md.ContainsKey("fromUsername") ? md["fromUsername"]?.ToString() : (md.ContainsKey("senderUsername") ? md["senderUsername"]?.ToString() : null);
+                                                senderDisplayName = md.ContainsKey("senderDisplayName") ? md["senderDisplayName"]?.ToString() : null;
+                                                content = md.ContainsKey("content") ? md["content"]?.ToString() : "";
+                                            }
+                                            else if (mo is Newtonsoft.Json.Linq.JObject jObj)
+                                            {
+                                                try { senderId = jObj["senderId"] != null ? jObj.Value<int?>("senderId") ?? 0 : 0; } catch { senderId = 0; }
+                                                try { fromUsername = jObj["fromUsername"] != null ? jObj.Value<string>("fromUsername") : (jObj["senderUsername"] != null ? jObj.Value<string>("senderUsername") : null); } catch { fromUsername = null; }
+                                                try { senderDisplayName = jObj["senderDisplayName"] != null ? jObj.Value<string>("senderDisplayName") : null; } catch { senderDisplayName = null; }
+                                                try { content = jObj["content"] != null ? jObj.Value<string>("content") : ""; } catch { content = ""; }
+                                            }
+                                        else
+                                        {
+                                            try
+                                            {
+                                                dynamic dm = mo;
+                                                senderId = dm.senderId ?? 0;
+                                                fromUsername = dm.fromUsername ?? dm.senderUsername ?? null;
+                                                content = dm.content ?? "";
+                                            }
+                                            catch { }
+                                        }
+
+                                        if (!string.IsNullOrEmpty(content))
+                                        {
+                                            if (senderId == _currentUserId)
+                                            {
+                                                groupChatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Right;
+                                                groupChatTextBox.SelectionColor = System.Drawing.Color.Blue;
+                                                groupChatTextBox.AppendText($"You: {content}\n");
+                                            }
+                                                                    else
+                                                                    {
+                                                                        groupChatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Left;
+                                                                        groupChatTextBox.SelectionColor = System.Drawing.Color.Black;
+                                                                        string who = !string.IsNullOrEmpty(senderDisplayName) ? senderDisplayName : (!string.IsNullOrEmpty(fromUsername) ? fromUsername : "Member");
+                                                                        groupChatTextBox.AppendText($"{who}: {content}\n");
+                                                                    }
+                                            groupChatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Left;
+                                            groupChatTextBox.SelectionColor = System.Drawing.Color.Black;
+                                        }
+                                    }
+
+                                    if (mcount == 0)
+                                        groupChatTextBox.AppendText("[No messages yet]\n");
+                                }
+                                else
+                                {
+                                    groupChatTextBox.AppendText("[No messages available]\n");
+                                }
+
+                                groupChatTextBox.ScrollToCaret();
+                            }
+                            catch { }
+                        }
+                                var membersObj = packet.Data["members"];
+                                if (membersObj is System.Collections.IEnumerable menEnum)
+                                {
+                                    foreach (var m in menEnum)
+                                    {
+                                        try
+                                        {
+                                            int uid = 0;
+                                            string uname = "";
+                                            string dname = "";
+                                            if (m is System.Collections.Generic.IDictionary<string, object> md)
+                                            {
+                                                uid = md.ContainsKey("userId") ? Convert.ToInt32(md["userId"]) : 0;
+                                                uname = md.ContainsKey("username") ? md["username"].ToString() : "";
+                                                dname = md.ContainsKey("displayName") ? md["displayName"].ToString() : uname;
+                                            }
+                                            else
+                                            {
+                                                string json = Newtonsoft.Json.JsonConvert.SerializeObject(m);
+                                                var user = Newtonsoft.Json.JsonConvert.DeserializeObject<Shared.Models.User>(json);
+                                                if (user != null)
+                                                {
+                                                    uid = user.UserId;
+                                                    uname = user.Username;
+                                                    dname = user.DisplayName;
+                                                }
+                                            }
+
+                                            if (!string.IsNullOrEmpty(uname))
+                                            {
+                                                _currentGroupMembers.Add($"{dname} (@{uname})");
+                                                var u = new YourChatApp.Shared.Models.User { UserId = uid, Username = uname, DisplayName = dname };
+                                                _currentGroupMemberUsers.Add(u);
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                        break;
+
+                    case CommandType.CREATE_GROUP:
+                        // On successful group creation, refresh group list
+                        if (packet.StatusCode >= 200 && packet.StatusCode < 300)
+                        {
+                            CommandPacket refresh = new CommandPacket(CommandType.GET_GROUPS);
+                            _clientSocket.SendPacket(refresh);
+                            MessageBox.Show("Group created successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                         break;
 
@@ -596,9 +681,8 @@ namespace YourChatApp.Client.Forms
                                     {
                                         try
                                         {
-                                            RichTextBox chatBox = (RichTextBox)this.Controls["chatTextBox"];
-                                            if (chatBox != null)
-                                                chatBox.AppendText($"📞 Video call ended\n");
+                                            if (chatTextBox != null)
+                                                chatTextBox.AppendText($"📞 Video call ended\n");
                                         }
                                         catch { }
                                     };
@@ -622,6 +706,7 @@ namespace YourChatApp.Client.Forms
                                 chatTextBox.AppendText($"📞 Error handling video call: {ex.Message}\n");
                             }
                         }
+
                         break;
 
                     case CommandType.VIDEO_CALL_ACCEPT:
@@ -647,9 +732,8 @@ namespace YourChatApp.Client.Forms
                                 {
                                     try
                                     {
-                                        RichTextBox chatBox = (RichTextBox)this.Controls["chatTextBox"];
-                                        if (chatBox != null)
-                                            chatBox.AppendText($"📞 Video call ended\n");
+                                        if (chatTextBox != null)
+                                            chatTextBox.AppendText($"📞 Video call ended\n");
                                     }
                                     catch { }
                                 };
@@ -698,7 +782,6 @@ namespace YourChatApp.Client.Forms
                         CommandPacket acceptPacket = new CommandPacket(CommandType.ACCEPT_FRIEND, acceptData);
                         _clientSocket.SendPacket(acceptPacket);
                         
-                        RichTextBox chatTextBox = (RichTextBox)this.Controls["chatTextBox"];
                         chatTextBox.AppendText($"✓ Accepted friend request from {request.DisplayName}\n");
                     }
                     else
@@ -710,7 +793,6 @@ namespace YourChatApp.Client.Forms
                         CommandPacket rejectPacket = new CommandPacket(CommandType.REJECT_FRIEND, rejectData);
                         _clientSocket.SendPacket(rejectPacket);
                         
-                        RichTextBox chatTextBox = (RichTextBox)this.Controls["chatTextBox"];
                         chatTextBox.AppendText($"✗ Rejected friend request from {request.DisplayName}\n");
                     }
                     
@@ -755,6 +837,360 @@ namespace YourChatApp.Client.Forms
             return form.ShowDialog() == DialogResult.OK ? textBox.Text : null;
         }
 
+        private void MainTabControl_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                // When switching to Groups tab, hide chat controls; when switching back, show them
+                var tabControl = sender as System.Windows.Forms.TabControl;
+                if (tabControl == null) return;
+
+                var selected = tabControl.SelectedTab;
+                bool showChats = selected != null && selected.Text == "Chats";
+
+                friendsLabel.Visible = showChats;
+                friendsListBox.Visible = showChats;
+                groupsListBox.Visible = !showChats;
+                chatLabel.Visible = showChats;
+                videoCallButton.Visible = showChats;
+                chatTextBox.Visible = showChats;
+                messageInputTextBox.Visible = showChats;
+                sendButton.Visible = showChats;
+                // Group-specific controls
+                groupChatTextBox.Visible = !showChats;
+                groupMessageInput.Visible = !showChats;
+                sendGroupMessageButton.Visible = !showChats;
+                createGroupButton.Visible = !showChats;
+                // viewMembersButton is added to tabGroups controls; hide by default when switching tabs
+                viewMembersButton.Visible = false;
+                viewMembersButton.Enabled = false;
+                // manageGroupButton visibility will be updated when a group is selected
+                manageGroupButton.Visible = !showChats ? manageGroupButton.Visible : false;
+                notificationPanel.Visible = true; // keep notifications visible
+
+                if (!showChats)
+                {
+                    // If entering Groups tab, request friends (for selection) and groups list
+                    CommandPacket f = new CommandPacket(CommandType.GET_FRIENDS);
+                    _clientSocket.SendPacket(f);
+                    CommandPacket g = new CommandPacket(CommandType.GET_GROUPS);
+                    _clientSocket.SendPacket(g);
+                }
+            }
+            catch { }
+        }
+
+        private void GroupsListBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                if (groupsListBox.SelectedIndex >= 0 && groupsListBox.SelectedIndex < _groups.Count)
+                {
+                    var g = _groups[groupsListBox.SelectedIndex];
+                    _currentGroupId = g.GroupId;
+                    _currentGroupName = g.GroupName;
+
+                    // Request members and recent messages for this group
+                    var data = new Dictionary<string, object>
+                    {
+                        { "groupId", _currentGroupId },
+                        { "includeMessages", true }
+                    };
+                    var packet = new CommandPacket(CommandType.GET_GROUPS, data);
+                    _clientSocket.SendPacket(packet);
+
+                    // Clear group chat view
+                    groupChatTextBox.Clear();
+                    groupChatTextBox.AppendText($"=== Group: {_currentGroupName} ===\n\n");
+
+                    // Show manage button only if current user is the group's creator
+                    try
+                    {
+                        manageGroupButton.Visible = (g.CreatedBy == _currentUserId);
+                    }
+                    catch { manageGroupButton.Visible = false; }
+
+                    // Enable the View Members button now that a group is selected
+                    viewMembersButton.Visible = true;
+                    viewMembersButton.Enabled = true;
+                }
+                else
+                {
+                    // No valid selection: hide/disable view/manage buttons
+                    viewMembersButton.Visible = false;
+                    viewMembersButton.Enabled = false;
+                    manageGroupButton.Visible = false;
+                }
+            }
+            catch { }
+        }
+
+        private void GroupsListBox_DoubleClick(object sender, EventArgs e)
+        {
+            try
+            {
+                // Reuse the same loading logic as selection change
+                GroupsListBox_SelectedIndexChanged(sender, e);
+            }
+            catch { }
+        }
+
+        // Handle incoming broadcasted group messages
+        private void HandleIncomingGroupMessage(CommandPacket packet)
+        {
+            try
+            {
+                if (packet.Data.ContainsKey("groupId") && packet.Data.ContainsKey("content"))
+                {
+                    int gid = Convert.ToInt32(packet.Data["groupId"]);
+                    // If server provided sender id, and it's this client, ignore (we already appended locally)
+                    if (packet.Data.ContainsKey("fromUserId"))
+                    {
+                        try
+                        {
+                            int fromId = Convert.ToInt32(packet.Data["fromUserId"]);
+                            if (fromId == _currentUserId)
+                                return; // skip duplicate for sender
+                        }
+                        catch { }
+                    }
+
+                    string fromUser = packet.Data.ContainsKey("fromUsername") ? packet.Data["fromUsername"].ToString() : null;
+                    string fromDisplay = packet.Data.ContainsKey("fromDisplayName") ? packet.Data["fromDisplayName"].ToString() : null;
+                    string content = packet.Data["content"].ToString();
+                    DateTime sentAt = packet.Data.ContainsKey("sentAt") ? Convert.ToDateTime(packet.Data["sentAt"]) : DateTime.Now;
+
+                    string who = !string.IsNullOrEmpty(fromDisplay) ? fromDisplay : (!string.IsNullOrEmpty(fromUser) ? fromUser : "Member");
+
+                    // If this message belongs to the currently open group, append to the group chat box
+                    if (gid == _currentGroupId)
+                    {
+                        groupChatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Left;
+                        groupChatTextBox.SelectionColor = System.Drawing.Color.Black;
+                        groupChatTextBox.AppendText($"{who}: {content}\n");
+                        groupChatTextBox.ScrollToCaret();
+                    }
+                    else
+                    {
+                        // Optionally: add a notification for other group activity
+                        chatTextBox.AppendText($"[Group {gid}] {who}: {content}\n");
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void AddMemberButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_currentGroupId <= 0)
+                {
+                    MessageBox.Show("Select a group first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                // Inline add/remove controls were moved to the Manage dialog.
+                MessageBox.Show("Use Manage Group to add members (right-click or Manage Group button).", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch { }
+        }
+
+        private void RemoveMemberButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_currentGroupId <= 0)
+                {
+                    MessageBox.Show("Select a group first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                // Inline remove member control was removed; use Manage Group dialog.
+                MessageBox.Show("Use Manage Group to remove members.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch { }
+        }
+
+        private void DeleteGroupButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_currentGroupId <= 0)
+                {
+                    MessageBox.Show("Select a group first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                var result = MessageBox.Show("Are you sure you want to delete this group?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (result != DialogResult.Yes) return;
+
+                var data = new Dictionary<string, object>
+                {
+                    { "groupId", _currentGroupId }
+                };
+                var packet = new CommandPacket(CommandType.DELETE_GROUP, data);
+                _clientSocket.SendPacket(packet);
+
+                // Refresh groups list
+                var refresh = new CommandPacket(CommandType.GET_GROUPS);
+                _clientSocket.SendPacket(refresh);
+            }
+            catch { }
+        }
+
+        private void SendGroupMessageButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_currentGroupId <= 0)
+                {
+                    MessageBox.Show("Select a group first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                string msg = groupMessageInput.Text?.Trim();
+                if (string.IsNullOrEmpty(msg)) return;
+
+                var data = new Dictionary<string, object>
+                {
+                    { "groupId", _currentGroupId },
+                    { "content", msg }
+                };
+
+                var packet = PacketProcessor.CreateCommand(CommandType.GROUP_MESSAGE, data);
+                _clientSocket.SendPacket(packet);
+                groupMessageInput.Clear();
+
+                // Show locally
+                groupChatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Right;
+                groupChatTextBox.SelectionColor = System.Drawing.Color.Blue;
+                groupChatTextBox.AppendText($"You: {msg}\n");
+                groupChatTextBox.SelectionAlignment = System.Windows.Forms.HorizontalAlignment.Left;
+                groupChatTextBox.SelectionColor = System.Drawing.Color.Black;
+            }
+            catch { }
+        }
+
+        private void GroupMessageInput_KeyDown(object sender, System.Windows.Forms.KeyEventArgs e)
+        {
+            try
+            {
+                // Enter to send, Shift+Enter to insert newline
+                if (e.KeyCode == System.Windows.Forms.Keys.Enter && !e.Shift)
+                {
+                    e.SuppressKeyPress = true; // prevent ding / newline
+                    SendGroupMessageButton_Click(sendGroupMessageButton, EventArgs.Empty);
+                }
+            }
+            catch { }
+        }
+
+        private void CreateGroupButton_Click(object sender, EventArgs e)
+        {
+            // legacy direct create - replaced by OpenCreateGroupForm
+            OpenCreateGroupForm_Click(sender, e);
+        }
+
+        private void OpenCreateGroupForm_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var friendTuples = _friends.Select(f => Tuple.Create(f.UserId, f.Username)).ToList();
+                var form = new CreateGroupForm(friendTuples);
+                var res = form.ShowDialog(this);
+                if (res == System.Windows.Forms.DialogResult.OK)
+                {
+                    var groupName = form.GroupName;
+                    var memberIds = form.SelectedUserIds ?? new List<int>();
+
+                    var data = new Dictionary<string, object>
+                    {
+                        { "groupName", groupName },
+                        { "memberIds", memberIds }
+                    };
+                    CommandPacket packet = PacketProcessor.CreateCommand(CommandType.CREATE_GROUP, data);
+                    _clientSocket.SendPacket(packet);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening create group form: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ViewMembersButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_currentGroupId <= 0)
+                {
+                    MessageBox.Show("Select a group first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                // Use the cached member list populated from server responses
+                var members = new List<string>(_currentGroupMembers);
+                var mf = new GroupMembersForm(members, _currentGroupName);
+                mf.ShowDialog(this);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening members view: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ManageGroupButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_currentGroupId <= 0)
+                {
+                    MessageBox.Show("Select a group first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Prepare friend list as shared User objects for the manage dialog
+                var friendsUsers = new List<YourChatApp.Shared.Models.User>();
+                foreach (var f in _friends)
+                {
+                    friendsUsers.Add(new YourChatApp.Shared.Models.User
+                    {
+                        UserId = f.UserId,
+                        Username = f.Username,
+                        DisplayName = f.DisplayName
+                    });
+                }
+
+                var mf = new GroupManageForm(_currentGroupId, _currentGroupName, _currentGroupMemberUsers, friendsUsers, _clientSocket, _currentUserId);
+                var res = mf.ShowDialog(this);
+                if (res == System.Windows.Forms.DialogResult.OK && mf.DeleteRequested)
+                {
+                    var data = new Dictionary<string, object> { { "groupId", _currentGroupId } };
+                    var packet = new CommandPacket(CommandType.DELETE_GROUP, data);
+                    _clientSocket.SendPacket(packet);
+
+                    // Refresh groups list
+                    var refresh = new CommandPacket(CommandType.GET_GROUPS);
+                    _clientSocket.SendPacket(refresh);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening manage form: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void UpdateFriendsForGroup()
+        {
+            try
+            {
+                _friendsUsernames.Clear();
+                foreach (var f in _friends)
+                {
+                    _friendsUsernames.Add(f.Username);
+                }
+            }
+            catch { }
+        }
+
         private void Logout_Click(object sender, EventArgs e)
         {
             try
@@ -782,6 +1218,11 @@ namespace YourChatApp.Client.Forms
             {
                 MessageBox.Show($"Error during logout: {ex.Message}", "Logout Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void Exit_Click(object sender, EventArgs e)
+        {
+            Application.Exit();
         }
     }
 

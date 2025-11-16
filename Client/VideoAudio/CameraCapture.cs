@@ -262,6 +262,11 @@ namespace YourChatApp.Client.VideoAudio
         public bool IsCapturing => _isCapturing;
 
         /// <summary>
+        /// True nếu đang dùng simulated camera (fallback)
+        /// </summary>
+        public bool IsUsingSimulatedCamera => _useSimulatedCamera;
+
+        /// <summary>
         /// Cleanup
         /// </summary>
         ~CameraCapture()

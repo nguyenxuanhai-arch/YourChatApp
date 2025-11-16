@@ -139,6 +139,14 @@ namespace YourChatApp.Server
         }
 
         /// <summary>
+        /// Alias for SendToUser - Gửi gói tin đến một user cụ thể
+        /// </summary>
+        public void SendPacketToUser(int userId, CommandPacket packet)
+        {
+            SendToUser(userId, packet);
+        }
+
+        /// <summary>
         /// Gửi gói tin đến nhiều user
         /// </summary>
         public void SendToUsers(List<int> userIds, CommandPacket packet)

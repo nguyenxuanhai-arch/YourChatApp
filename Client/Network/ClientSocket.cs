@@ -38,7 +38,7 @@ namespace YourChatApp.Client.Network
         // Đổi IP này thành IP của máy Server (dùng ipconfig để xem)
         // Ví dụ: "192.168.1.100" nếu Server ở máy khác trong LAN
         // Hoặc giữ "127.0.0.1" nếu Server và Client cùng máy
-        private const string SERVER_HOST = "192.168.1.129";
+        private const string SERVER_HOST = "127.0.0.1";
 
         public ClientSocket()
         {

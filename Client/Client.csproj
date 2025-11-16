@@ -5,13 +5,18 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <AssemblyName>YourChatApp.Client</AssemblyName>
     <RootNamespace>YourChatApp.Client</RootNamespace>
-    <UseWindowsForms>true</UseWindowsForms>
+	  <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+	  <ApplicationManifest>app.manifest</ApplicationManifest>
+
+	  <UseWindowsForms>true</UseWindowsForms>
+    <NoWarn>$(NoWarn);NETSDK1137;NU1701</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="AForge.Video" Version="2.2.5" />
     <PackageReference Include="AForge.Video.DirectShow" Version="2.2.5" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -39,6 +39,9 @@
           }
         },
         "warningProperties": {
+          "noWarn": [
+            "NU1701"
+          ],
           "warnAsError": [
             "NU1605"
           ]
@@ -61,6 +64,10 @@
             "AForge.Video.DirectShow": {
               "target": "Package",
               "version": "[2.2.5, )"
+            },
+            "NAudio": {
+              "target": "Package",
+              "version": "[2.2.1, )"
             },
             "Newtonsoft.Json": {
               "target": "Package",

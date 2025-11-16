@@ -70,6 +70,11 @@ namespace YourChatApp.Shared.Models
         JOIN_GROUP = 32,
         LEAVE_GROUP = 33,
         GROUP_MESSAGE = 34,
+        INVITE_TO_GROUP = 35,
+        GET_GROUP_INVITES = 36,
+        ACCEPT_GROUP_INVITE = 37,
+        REJECT_GROUP_INVITE = 38,
+        DELETE_GROUP = 39,
 
         // Video Call
         VIDEO_CALL_REQUEST = 40,

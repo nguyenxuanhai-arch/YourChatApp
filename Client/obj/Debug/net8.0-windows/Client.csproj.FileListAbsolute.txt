@@ -26,3 +26,14 @@ C:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net8.0-windows\ref\YourCha
 C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\AForge.dll
 C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\AForge.Video.dll
 C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\AForge.Video.DirectShow.dll
+C:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net8.0-windows\YourChatApp.Client.Forms.GroupChatForm.resources
+C:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net8.0-windows\YourChatApp.Client.Forms.RegisterForm.resources
+C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\NAudio.dll
+C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\NAudio.Asio.dll
+C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\NAudio.Core.dll
+C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\NAudio.Midi.dll
+C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\NAudio.Wasapi.dll
+C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\NAudio.WinForms.dll
+C:\Users\TP\source\repos\YourChatApp\Client\bin\Debug\net8.0-windows\NAudio.WinMM.dll
+c:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net8.0-windows\YourChatApp.Client.Forms.GroupManageForm.resources
+c:\Users\TP\source\repos\YourChatApp\Client\obj\Debug\net8.0-windows\YourChatApp.Client.Forms.GroupMembersForm.resources

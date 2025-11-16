@@ -9,7 +9,7 @@ using YourChatApp.Shared.Models;
 
 namespace YourChatApp.Client.Forms
 {
-    public class VideoCallForm : Form
+    public partial class VideoCallForm : Form
     {
         private ClientSocket _clientSocket;
         private CameraCapture _cameraCapture;
@@ -58,7 +58,7 @@ namespace YourChatApp.Client.Forms
                 Console.WriteLine($"[VideoCallForm] Video call form initialized for {_friendName} (ID: {_friendId})");
                 if (_clientSocket != null)
                     _clientSocket.OnPacketReceived += HandleServerMessage;
-                
+
                 // Auto-start call when form opens
                 this.Load += (s, e) => AutoStartCall();
             }
@@ -78,7 +78,6 @@ namespace YourChatApp.Client.Forms
                 {
                     this.Invoke(new Action(() =>
                     {
-                        Button startCallButton = (Button)this.Controls["startCallButton"];
                         if (startCallButton != null)
                         {
                             StartCallButton_Click(startCallButton, EventArgs.Empty);
@@ -92,118 +91,11 @@ namespace YourChatApp.Client.Forms
             }
         }
 
-        private void InitializeComponent()
-        {
-            try
-            {
-                this.Text = string.IsNullOrEmpty(_friendName) ? "Video Call" : $"Video Call - {_friendName}";
-                this.Size = new System.Drawing.Size(900, 650);
-                this.StartPosition = FormStartPosition.CenterScreen;
-
-                // Local Video Display (Trái)
-                PictureBox localVideoPictureBox = new PictureBox();
-                localVideoPictureBox.Name = "localVideoPictureBox";
-                localVideoPictureBox.Location = new System.Drawing.Point(10, 10);
-                localVideoPictureBox.Size = new System.Drawing.Size(420, 380);
-                localVideoPictureBox.BorderStyle = BorderStyle.FixedSingle;
-                localVideoPictureBox.BackColor = Color.Black;
-                this.Controls.Add(localVideoPictureBox);
-
-                Label localLabel = new Label();
-                localLabel.Text = "Local Video";
-                localLabel.Location = new System.Drawing.Point(10, 395);
-                localLabel.Size = new System.Drawing.Size(420, 25);
-                this.Controls.Add(localLabel);
-
-            // Remote Video Display (Phải)
-            PictureBox remoteVideoPictureBox = new PictureBox();
-            remoteVideoPictureBox.Name = "remoteVideoPictureBox";
-            remoteVideoPictureBox.Location = new System.Drawing.Point(470, 10);
-            remoteVideoPictureBox.Size = new System.Drawing.Size(420, 380);
-            remoteVideoPictureBox.BorderStyle = BorderStyle.FixedSingle;
-            remoteVideoPictureBox.BackColor = Color.Black;
-            this.Controls.Add(remoteVideoPictureBox);
-
-            Label remoteLabel = new Label();
-            remoteLabel.Text = "Remote Video";
-            remoteLabel.Location = new System.Drawing.Point(470, 395);
-            remoteLabel.Size = new System.Drawing.Size(420, 25);
-            this.Controls.Add(remoteLabel);
-
-            // Controls
-            Label controlsLabel = new Label();
-            controlsLabel.Text = "Call Controls";
-            controlsLabel.Font = new System.Drawing.Font("Arial", 12, System.Drawing.FontStyle.Bold);
-            controlsLabel.Location = new System.Drawing.Point(10, 430);
-            controlsLabel.Size = new System.Drawing.Size(200, 25);
-            this.Controls.Add(controlsLabel);
-
-            // Start Call Button
-            Button startCallButton = new Button();
-            startCallButton.Name = "startCallButton";
-            startCallButton.Text = "Start Call";
-            startCallButton.Location = new System.Drawing.Point(10, 460);
-            startCallButton.Size = new System.Drawing.Size(100, 40);
-            startCallButton.Click += StartCallButton_Click;
-            this.Controls.Add(startCallButton);
-
-            // Microphone Toggle
-            CheckBox microphoneCheckBox = new CheckBox();
-            microphoneCheckBox.Name = "microphoneCheckBox";
-            microphoneCheckBox.Text = "Microphone";
-            microphoneCheckBox.Checked = true;
-            microphoneCheckBox.Location = new System.Drawing.Point(120, 465);
-            microphoneCheckBox.Size = new System.Drawing.Size(120, 25);
-            microphoneCheckBox.CheckedChanged += MicrophoneCheckBox_CheckedChanged;
-            this.Controls.Add(microphoneCheckBox);
-
-            // Camera Toggle
-            CheckBox cameraCheckBox = new CheckBox();
-            cameraCheckBox.Name = "cameraCheckBox";
-            cameraCheckBox.Text = "Camera";
-            cameraCheckBox.Checked = true;
-            cameraCheckBox.Location = new System.Drawing.Point(250, 465);
-            cameraCheckBox.Size = new System.Drawing.Size(100, 25);
-            cameraCheckBox.CheckedChanged += CameraCheckBox_CheckedChanged;
-            this.Controls.Add(cameraCheckBox);
-
-            // End Call Button
-            Button endCallButton = new Button();
-            endCallButton.Name = "endCallButton";
-            endCallButton.Text = "End Call";
-            endCallButton.Location = new System.Drawing.Point(360, 460);
-            endCallButton.Size = new System.Drawing.Size(100, 40);
-            endCallButton.Click += EndCallButton_Click;
-            endCallButton.Enabled = false;
-            this.Controls.Add(endCallButton);
-
-            // Statistics/Status
-            RichTextBox statsTextBox = new RichTextBox();
-            statsTextBox.Name = "statsTextBox";
-            statsTextBox.Location = new System.Drawing.Point(10, 510);
-            statsTextBox.Size = new System.Drawing.Size(880, 105);
-            statsTextBox.ReadOnly = true;
-            this.Controls.Add(statsTextBox);
-
-            UpdateStats();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[VideoCallForm] Error in InitializeComponent: {ex.Message}");
-                MessageBox.Show($"Error initializing video call UI: {ex.Message}");
-            }
-        }
-
         private void StartCallButton_Click(object sender, EventArgs e)
         {
             try
             {
                 _isInCall = true;
-
-                CheckBox cameraCheckBox = (CheckBox)this.Controls["cameraCheckBox"];
-                CheckBox microphoneCheckBox = (CheckBox)this.Controls["microphoneCheckBox"];
-                Button startCallButton = (Button)this.Controls["startCallButton"];
-                Button endCallButton = (Button)this.Controls["endCallButton"];
 
                 // Bắt đầu capture camera
                 if (cameraCheckBox.Checked && _cameraCapture != null)
@@ -251,27 +143,51 @@ namespace YourChatApp.Client.Forms
         {
             try
             {
+                // Send END_CALL signal to the other client
+                var data = new Dictionary<string, object>
+                {
+                    { "callId", _callId },
+                    { "friendId", _friendId },
+                    { "userId", _currentUserId }
+                };
+                var packet = new CommandPacket(CommandType.VIDEO_CALL_END, data);
+                _clientSocket?.SendPacket(packet);
+
+                // Close this form
+                HandleCallEnded();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error ending call: {ex.Message}");
+            }
+        }
+
+        private void HandleCallEnded()
+        {
+            try
+            {
                 _isInCall = false;
 
                 if (_cameraCapture != null)
                     _cameraCapture.StopCapture();
                 if (_audioPlayback != null)
+                {
                     _audioPlayback.StopRecording();
+                    _audioPlayback.StopPlayback();
+                    _audioPlayback.Dispose();
+                }
 
-                Button startCallButton = (Button)this.Controls["startCallButton"];
-                Button endCallButton = (Button)this.Controls["endCallButton"];
+                // Unsubscribe from events
+                if (_clientSocket != null)
+                    _clientSocket.OnPacketReceived -= HandleServerMessage;
 
-                startCallButton.Enabled = true;
-                endCallButton.Enabled = false;
-
-                PictureBox localVideoPictureBox = (PictureBox)this.Controls["localVideoPictureBox"];
-                localVideoPictureBox.Image = null;
-
-                MessageBox.Show("Video call ended");
+                // Close the form
+                this.Close();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error ending call: {ex.Message}");
+                Console.WriteLine($"[VideoCallForm] Error handling call end: {ex.Message}");
+                this.Close();
             }
         }
 
@@ -348,11 +264,13 @@ namespace YourChatApp.Client.Forms
                 {
                     try
                     {
-                        PictureBox localVideoPictureBox = (PictureBox)this.Controls["localVideoPictureBox"];
                         if (localVideoPictureBox != null && !localVideoPictureBox.IsDisposed)
                         {
                             var oldImage = localVideoPictureBox.Image;
-                            localVideoPictureBox.Image = new Bitmap(frame);
+                            // Clone and flip for mirror effect (local display only)
+                            Bitmap flippedFrame = (Bitmap)frame.Clone();
+                            flippedFrame.RotateFlip(RotateFlipType.RotateNoneFlipX);
+                            localVideoPictureBox.Image = flippedFrame;
                             oldImage?.Dispose();
                             UpdateStats();
                         }
@@ -386,7 +304,7 @@ namespace YourChatApp.Client.Forms
                     var encoderParams = new System.Drawing.Imaging.EncoderParameters(1);
                     encoderParams.Param[0] = new System.Drawing.Imaging.EncoderParameter(
                         System.Drawing.Imaging.Encoder.Quality, 30L);
-                    
+
                     frame.Save(ms, encoder, encoderParams);
                     byte[] frameData = ms.ToArray();
 
@@ -425,10 +343,10 @@ namespace YourChatApp.Client.Forms
             {
                 _isSendingAudio = true;
                 _lastAudioSend = DateTime.Now;
-                
+
                 // Add delay to prevent network buffer overflow
                 await System.Threading.Tasks.Task.Delay(100);
-                
+
                 // Gửi audio data qua socket
                 var audioPacket = new Dictionary<string, object>
                 {
@@ -461,11 +379,14 @@ namespace YourChatApp.Client.Forms
                 {
                     Bitmap frame = new Bitmap(ms);
                     
+                    // Unflip remote frame if it was flipped by sender
+                    // Remote view should show the other person as they face you (not mirrored)
+                    frame.RotateFlip(RotateFlipType.RotateNoneFlipX);
+
                     this.BeginInvoke(new Action(() =>
                     {
                         try
                         {
-                            PictureBox remoteVideoPictureBox = (PictureBox)this.Controls["remoteVideoPictureBox"];
                             if (remoteVideoPictureBox != null && !remoteVideoPictureBox.IsDisposed)
                             {
                                 var oldImage = remoteVideoPictureBox.Image;
@@ -485,6 +406,20 @@ namespace YourChatApp.Client.Forms
 
         private void HandleServerMessage(CommandPacket packet)
         {
+            if (packet.Command == CommandType.VIDEO_CALL_END)
+            {
+                // Remote user ended the call, close this form too
+                if (InvokeRequired)
+                {
+                    Invoke(new Action(() => HandleCallEnded()));
+                }
+                else
+                {
+                    HandleCallEnded();
+                }
+                return;
+            }
+
             if (packet.Command == CommandType.VIDEO_AUDIO_DATA)
             {
                 // Handle audio data
@@ -501,7 +436,7 @@ namespace YourChatApp.Client.Forms
                         Console.WriteLine($"[VideoCallForm] Error playing audio: {ex.Message}");
                     }
                 }
-                
+
                 // Handle video data
                 if (packet.Data.ContainsKey("videoData"))
                 {
@@ -542,7 +477,6 @@ namespace YourChatApp.Client.Forms
 
             try
             {
-                RichTextBox statsTextBox = (RichTextBox)this.Controls["statsTextBox"];
                 if (statsTextBox != null && !statsTextBox.IsDisposed)
                 {
                     statsTextBox.Clear();
@@ -556,6 +490,28 @@ namespace YourChatApp.Client.Forms
             {
                 Console.WriteLine($"[VideoCallForm] Error updating stats: {ex.Message}");
             }
+        }
+
+        private void VideoCallForm_Load(object sender, EventArgs e)
+        {
+            // Đảm bảo remote là nền chính
+            remoteVideoPictureBox.SendToBack();
+
+            // Local overlay nằm trên
+            localVideoPictureBox.Parent = remoteVideoPictureBox;
+            localVideoPictureBox.BringToFront();
+
+            MoveLocalVideoToBottomRight();
+        }
+
+        private void MoveLocalVideoToBottomRight()
+        {
+            int padding = 16;
+
+            localVideoPictureBox.Location = new Point(
+                remoteVideoPictureBox.Width - localVideoPictureBox.Width - padding,
+                remoteVideoPictureBox.Height - localVideoPictureBox.Height - padding
+            );
         }
     }
 }

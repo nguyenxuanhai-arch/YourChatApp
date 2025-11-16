@@ -6,6 +6,7 @@
     <AssemblyName>YourChatApp.Server</AssemblyName>
     <RootNamespace>YourChatApp.Server</RootNamespace>
     <UseWindowsForms>true</UseWindowsForms>
+    <NoWarn>$(NoWarn);NETSDK1138</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
