@@ -2,10 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <AssemblyName>YourChatApp.Server</AssemblyName>
     <RootNamespace>YourChatApp.Server</RootNamespace>
-    <UseWindowsForms>true</UseWindowsForms>
     <NoWarn>$(NoWarn);NETSDK1138</NoWarn>
   </PropertyGroup>
 
