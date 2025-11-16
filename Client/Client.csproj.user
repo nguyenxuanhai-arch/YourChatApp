@@ -8,6 +8,9 @@
     <Compile Update="Forms\CreateGroupForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Update="Forms\GroupChatForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <!-- GroupChatForm removed (unused) -->
     <Compile Update="Forms\GroupManageForm.cs">
       <SubType>Form</SubType>

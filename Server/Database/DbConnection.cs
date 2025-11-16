@@ -20,10 +20,51 @@ namespace YourChatApp.Server.Database
         private const string DEFAULT_DATABASE = "yourchatapp";
         private const int DEFAULT_PORT = 3306;
 
+        // runtime values (may be overridden from environment variable ConnectionStrings__Default)
+        private string _host = DEFAULT_HOST;
+        private string _user = DEFAULT_USER;
+        private string _password = DEFAULT_PASSWORD;
+        private string _database = DEFAULT_DATABASE;
+        private int _port = DEFAULT_PORT;
+
         private DbConnection()
         {
-            _connectionString = $"Server={DEFAULT_HOST};Port={DEFAULT_PORT};Uid={DEFAULT_USER};Pwd={DEFAULT_PASSWORD};Database={DEFAULT_DATABASE};";
-            _connectionStringNoDb = $"Server={DEFAULT_HOST};Port={DEFAULT_PORT};Uid={DEFAULT_USER};Pwd={DEFAULT_PASSWORD};";
+            // Allow overriding connection string via environment variable
+            string envConn = Environment.GetEnvironmentVariable("ConnectionStrings__Default")
+                             ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+
+            if (!string.IsNullOrEmpty(envConn))
+            {
+                try
+                {
+                    var builder = new MySqlConnectionStringBuilder(envConn);
+                    _connectionString = builder.ConnectionString;
+
+                    // copy and remove database for no-db connection
+                    var noDbBuilder = new MySqlConnectionStringBuilder(builder.ConnectionString);
+                    noDbBuilder.Remove("Database");
+                    _connectionStringNoDb = noDbBuilder.ConnectionString;
+
+                    // set runtime fields for logging
+                    _host = builder.Server;
+                    _user = builder.UserID;
+                    _password = builder.Password;
+                    _database = builder.Database;
+                    _port = (int)builder.Port;
+                }
+                catch (Exception ex)
+                {
+                    // fallback to defaults on parse error
+                    Console.WriteLine($"[WARN] Failed to parse connection string from environment: {ex.Message}");
+                    _connectionString = $"Server={DEFAULT_HOST};Port={DEFAULT_PORT};Uid={DEFAULT_USER};Pwd={DEFAULT_PASSWORD};Database={DEFAULT_DATABASE};";
+                    _connectionStringNoDb = $"Server={DEFAULT_HOST};Port={DEFAULT_PORT};Uid={DEFAULT_USER};Pwd={DEFAULT_PASSWORD};";
+                }
+            }
+            else
+            {
+                _connectionString = $"Server={DEFAULT_HOST};Port={DEFAULT_PORT};Uid={DEFAULT_USER};Pwd={DEFAULT_PASSWORD};Database={DEFAULT_DATABASE};";
+                _connectionStringNoDb = $"Server={DEFAULT_HOST};Port={DEFAULT_PORT};Uid={DEFAULT_USER};Pwd={DEFAULT_PASSWORD};";
+            }
         }
 
         /// <summary>
@@ -54,7 +95,7 @@ namespace YourChatApp.Server.Database
         {
             try
             {
-                Console.WriteLine($"[DB] Attempting connection to {DEFAULT_HOST}:{DEFAULT_PORT} as {DEFAULT_USER}...");
+                Console.WriteLine($"[DB] Attempting connection to {_host}:{_port} as {_user}...");
                 var connection = new MySqlConnection(_connectionString);
                 connection.Open();
                 Console.WriteLine($"[✓] Database connection successful!");
