@@ -332,7 +332,7 @@ namespace YourChatApp.Client.Forms
 
         private async void SendAudioData(byte[] audioData)
         {
-            if (!_isInCall || _isSendingAudio)
+            if (!_isInCall || _isSendingAudio || _friendId == 0)
                 return;
 
             // Rate limiting: only send once every 200ms (5 packets/sec)
@@ -344,19 +344,19 @@ namespace YourChatApp.Client.Forms
                 _isSendingAudio = true;
                 _lastAudioSend = DateTime.Now;
 
-                // Add delay to prevent network buffer overflow
-                await System.Threading.Tasks.Task.Delay(100);
-
                 // Gửi audio data qua socket
                 var audioPacket = new Dictionary<string, object>
                 {
                     { "callId", _callId },
-                    { "receiverId", 0 }, // TODO: Set actual receiver
+                    { "receiverId", _friendId },
                     { "audioData", Convert.ToBase64String(audioData) }
                 };
 
                 CommandPacket packet = PacketProcessor.CreateCommand(CommandType.VIDEO_AUDIO_DATA, audioPacket);
                 _clientSocket.SendPacket(packet);
+
+                // Small delay to prevent network buffer overflow
+                await System.Threading.Tasks.Task.Delay(50);
             }
             catch (Exception ex)
             {

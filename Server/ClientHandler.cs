@@ -907,28 +907,17 @@ namespace YourChatApp.Server
         {
             try
             {
-                if (!packet.Data.ContainsKey("callId"))
+                if (!packet.Data.ContainsKey("callId") || !packet.Data.ContainsKey("receiverId"))
                     return null; // No response for performance
 
                 string callId = packet.Data["callId"].ToString();
+                int receiverId = Convert.ToInt32(packet.Data["receiverId"]);
                 
-                // Find the other participant in this call
-                var otherClients = _server.GetAllClients()
-                    .Where(c => c != this && c.UserId.HasValue)
-                    .ToList();
+                if (receiverId <= 0)
+                    return null;
 
-                // Forward to all other connected clients in the call
-                foreach (var client in otherClients)
-                {
-                    try
-                    {
-                        client.SendPacket(packet);
-                    }
-                    catch (Exception fwdEx)
-                    {
-                        Console.WriteLine($"[WARN] Failed to forward video/audio to Client #{client.ClientId}: {fwdEx.Message}");
-                    }
-                }
+                // Forward audio data only to the specific receiver
+                _server.SendToUser(receiverId, packet);
 
                 // No response to sender for performance
                 return null;
