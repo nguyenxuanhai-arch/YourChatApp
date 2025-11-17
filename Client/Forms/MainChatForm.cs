@@ -143,6 +143,20 @@ namespace YourChatApp.Client.Forms
                 _clientSocket.SendPacket(packet);
 
                 chatTextBox.AppendText($"📞 Calling {_currentChatFriendName}... Waiting for response...\n");
+                
+                // Open video call form for caller immediately when initiating call
+                VideoCallForm videoForm = new VideoCallForm(_clientSocket, _currentChatFriendId, _currentChatFriendName, _currentUserId);
+                videoForm.Tag = new { callId = callId, isReceiver = false };
+                videoForm.FormClosed += (s, e) =>
+                {
+                    try
+                    {
+                        if (chatTextBox != null)
+                            chatTextBox.AppendText($"📞 Video call ended\n");
+                    }
+                    catch { }
+                };
+                videoForm.Show();
             }
             catch (Exception ex)
             {
@@ -728,42 +742,8 @@ namespace YourChatApp.Client.Forms
                             
                             chatTextBox.AppendText($"📞 {accepterName} accepted your call\n");
                             
-                            // Look up the friend info using the stored callId
-                            int friendId = accepterId > 0 ? accepterId : (_currentChatFriendId > 0 ? _currentChatFriendId : 0);
-                            string friendName = accepterName;
-                            
-                            // Try to find friend info from pending calls
-                            if (!string.IsNullOrEmpty(callId) && _pendingVideoCallIds.ContainsKey(callId))
-                            {
-                                friendId = _pendingVideoCallIds[callId];
-                                _pendingVideoCallIds.Remove(callId);
-                            }
-                            
-                            // Get friend's display name if we have it
-                            var friend = _friends.FirstOrDefault(f => f.UserId == friendId);
-                            if (friend != null)
-                                friendName = friend.DisplayName;
-                            
-                            // Open video call form for caller when acceptance is received
-                            if (friendId > 0 && !string.IsNullOrEmpty(friendName))
-                            {
-                                VideoCallForm videoForm = new VideoCallForm(_clientSocket, friendId, friendName, _currentUserId);
-                                videoForm.Tag = new { callId = callId, isReceiver = false };
-                                videoForm.FormClosed += (s, e) =>
-                                {
-                                    try
-                                    {
-                                        if (chatTextBox != null)
-                                            chatTextBox.AppendText($"📞 Video call ended\n");
-                                    }
-                                    catch { }
-                                };
-                                videoForm.Show();
-                            }
-                            else
-                            {
-                                chatTextBox.AppendText($"📞 Error: Could not identify call recipient\n");
-                            }
+                            // Caller already has video form open from when they initiated the call
+                            // Just update UI to show that call was accepted and both sides can now communicate
                         }
                         catch (Exception ex)
                         {
